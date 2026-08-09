@@ -89,7 +89,7 @@ function fmt(iso?: string) {
 </script>
 
 <template>
-  <div class="p-4 sm:p-6 lg:p-8 max-w-[1400px] mx-auto space-y-6 animate-fade-in">
+  <div class="page space-y-6 animate-fade-in">
     <PageHeader title="Настройки" subtitle="Управление аккаунтом, командой и рабочим пространством" />
 
     <div class="flex items-center gap-2 overflow-x-auto no-scrollbar">

@@ -17,7 +17,7 @@ const toneBg: Record<string, string> = {
   sky: 'from-sky-50 to-white border-sky-100',
   rose: 'from-rose-50 to-white border-rose-100',
   amber: 'from-amber-50 to-white border-amber-100',
-  violet: 'from-violet-50 to-white border-violet-100',
+  brand: 'from-brand-50 to-white border-brand-100',
   lime: 'from-lime-50 to-white border-lime-100',
 }
 
@@ -29,7 +29,7 @@ function openAssistant() {
 </script>
 
 <template>
-  <div class="p-4 sm:p-5 lg:p-6 max-w-[1440px] mx-auto space-y-5 animate-fade-in pb-20">
+  <div class="page space-y-5 animate-fade-in pb-20">
     <!-- Greeting + compact metrics -->
     <div class="grid grid-cols-1 xl:grid-cols-[minmax(300px,1fr)_minmax(600px,1.35fr)] gap-5 items-center">
       <div>
@@ -44,7 +44,7 @@ function openAssistant() {
 
       <div class="card px-4 py-3 grid grid-cols-2 sm:grid-cols-4 gap-1 divide-x divide-ink-100">
         <div class="flex items-center gap-2.5 px-2">
-          <span class="grid place-items-center w-9 h-9 rounded-xl bg-violet-50 text-violet-600 shrink-0">
+          <span class="grid place-items-center w-9 h-9 rounded-xl bg-brand-50 text-brand-600 shrink-0">
             <Icon name="sparkles" :size="18" />
           </span>
           <div class="min-w-0">
@@ -54,12 +54,12 @@ function openAssistant() {
           </div>
         </div>
         <RouterLink to="/projects" class="flex items-center gap-2.5 px-3 group">
-          <span class="grid place-items-center w-9 h-9 rounded-xl bg-violet-50 text-violet-600 shrink-0">
+          <span class="grid place-items-center w-9 h-9 rounded-xl bg-brand-50 text-brand-600 shrink-0">
             <Icon name="folder" :size="18" />
           </span>
           <div>
             <p class="text-[10px] text-ink-400">Проекты</p>
-            <p class="text-lg font-extrabold leading-tight text-ink-900 group-hover:text-violet-600">{{ dashboardStats.activeProjects }}</p>
+            <p class="text-lg font-extrabold leading-tight text-ink-900 group-hover:text-brand-600">{{ dashboardStats.activeProjects }}</p>
             <p class="text-[9px] text-ink-400">Активных</p>
           </div>
         </RouterLink>
@@ -111,7 +111,7 @@ function openAssistant() {
         >
           <div class="relative aspect-[4/3] rounded-xl overflow-hidden bg-ink-50 mb-2.5">
             <img :src="s.image" :alt="s.title" class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" />
-            <span class="absolute right-2 bottom-2 grid place-items-center w-7 h-7 rounded-full bg-white text-violet-600 shadow-soft">
+            <span class="absolute right-2 bottom-2 grid place-items-center w-7 h-7 rounded-full bg-white text-brand-600 shadow-soft">
               <Icon :name="s.icon" :size="14" />
             </span>
           </div>
@@ -158,7 +158,7 @@ function openAssistant() {
               </button>
             </div>
             <div class="min-w-0 px-0.5">
-              <div class="font-bold text-ink-900 text-[12px] truncate group-hover:text-violet-600">
+              <div class="font-bold text-ink-900 text-[12px] truncate group-hover:text-brand-600">
                 {{ p.title }}
               </div>
               <div class="text-[10px] text-emerald-600 mt-1">{{ p.type }}</div>
@@ -200,7 +200,7 @@ function openAssistant() {
 
     <!-- Bottom help banner -->
     <div
-      class="relative overflow-hidden rounded-2xl border border-violet-100 bg-gradient-to-r from-violet-50 via-fuchsia-50/40 to-white px-5 py-3.5"
+      class="relative overflow-hidden rounded-2xl border border-brand-100 bg-gradient-to-r from-brand-50 via-fuchsia-50/40 to-white px-5 py-3.5"
     >
       <div class="flex flex-col lg:flex-row lg:items-center gap-4 lg:gap-8">
         <div class="min-w-0 flex-1">

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { RouterLink, useRoute } from 'vue-router'
-import { computed, type Component } from 'vue'
+import { computed, onMounted, type Component } from 'vue'
 import {
   CreditCard,
   Folder,
@@ -13,7 +13,7 @@ import {
 } from '@lucide/vue'
 import Logo from '@/components/ui/Logo.vue'
 import { useAppStore } from '@/stores/app'
-import { dashboardStats } from '@/data/mock'
+import { useUsageStore } from '@/stores/usage'
 
 type NavItem = {
   name: string
@@ -100,9 +100,12 @@ const sections: NavSection[] = [
 ]
 
 const collapsed = computed(() => app.sidebarCollapsed)
-const creditsPct = computed(() =>
-  Math.round((dashboardStats.creditsLeft / dashboardStats.creditsTotal) * 100),
-)
+
+const usageStore = useUsageStore()
+onMounted(() => usageStore.load())
+
+const usage = computed(() => usageStore.usage)
+const creditsPct = computed(() => usageStore.leftPercent)
 
 function isActive(item: NavItem) {
   if (item.exact || item.to === '/') return route.path === item.to
@@ -182,7 +185,7 @@ function linkClass(item: NavItem) {
               <span v-if="!collapsed" class="truncate flex-1">{{ item.label }}</span>
               <span
                 v-if="!collapsed && item.badge"
-                class="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-[#7C5CFF] text-white leading-none"
+                class="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-accent text-ink-900 leading-none"
               >
                 {{ item.badge }}
               </span>
@@ -198,35 +201,51 @@ function linkClass(item: NavItem) {
         v-if="!collapsed"
         class="rounded-2xl bg-white/[0.05] border border-white/10 p-4 mb-3"
       >
-        <p class="text-xs text-white/50">
-          Ваш план:
-          <span class="font-bold text-white">{{ dashboardStats.planName }}</span>
-        </p>
-        <div class="flex items-center justify-between mt-3 mb-2">
-          <span class="text-xs font-medium text-white/60">Осталось генераций</span>
-          <span class="text-xs font-bold text-white tabular-nums">
-            {{ dashboardStats.creditsLeft }}
-            <span class="text-white/40">/</span>
-            {{ dashboardStats.creditsTotal }}
-          </span>
-        </div>
-        <div class="h-1.5 rounded-full bg-white/10 overflow-hidden">
-          <div
-            class="h-full bg-accent rounded-full transition-all"
-            :style="{ width: creditsPct + '%' }"
-          />
-        </div>
+        <!-- Скелет на время первой загрузки: без него блок «прыгает» с нулей
+             на реальные цифры, и это читается как баг. -->
+        <template v-if="!usage && usageStore.loading">
+          <div class="h-3 w-24 rounded bg-white/10 animate-pulse" />
+          <div class="h-3 w-full rounded bg-white/10 animate-pulse mt-4" />
+          <div class="h-1.5 w-full rounded-full bg-white/10 mt-3" />
+        </template>
+
+        <template v-else-if="usage">
+          <p class="text-xs text-white/50">
+            Ваш план:
+            <span class="font-bold text-white">{{ usage.planLabel }}</span>
+          </p>
+          <div class="flex items-center justify-between mt-3 mb-2">
+            <span class="text-xs font-medium text-white/60">Осталось генераций</span>
+            <span class="text-xs font-bold text-white tabular-nums">
+              {{ usage.left.toLocaleString('ru-RU') }}
+              <span class="text-white/40">/</span>
+              {{ usage.limit.toLocaleString('ru-RU') }}
+            </span>
+          </div>
+          <div class="h-1.5 rounded-full bg-white/10 overflow-hidden">
+            <div
+              class="h-full rounded-full transition-all duration-500"
+              :class="usageStore.isLow ? 'bg-red-400' : 'bg-accent'"
+              :style="{ width: creditsPct + '%' }"
+            />
+          </div>
+          <p v-if="usageStore.isLow" class="text-[11px] text-red-300 mt-2">
+            Генерации почти закончились
+          </p>
+        </template>
+
+        <p v-else class="text-xs text-white/40">Не удалось загрузить лимит</p>
       </div>
 
-      <button
-        type="button"
+      <RouterLink
+        to="/settings?tab=billing"
         class="btn btn-accent w-full"
         :class="collapsed ? 'h-11 px-0 justify-center' : 'h-11'"
         :title="collapsed ? 'Улучшить план' : ''"
       >
         <Gift :size="18" :stroke-width="1.8" />
         <span v-if="!collapsed">Улучшить план</span>
-      </button>
+      </RouterLink>
     </div>
   </aside>
 </template>

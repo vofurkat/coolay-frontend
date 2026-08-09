@@ -4,7 +4,7 @@
  * Состояние живёт в Pinia + localStorage, поэтому переживает перезагрузку страницы.
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import Icon from '@/components/ui/Icon.vue'
 import WizardSteps from '@/components/sku/WizardSteps.vue'
 import ReadinessRing from '@/components/sku/ReadinessRing.vue'
@@ -13,8 +13,10 @@ import { useAuthStore } from '@/stores/auth'
 import { analyzePhoto, createImages, generateContent, pollTasks } from '@/data/skuApi'
 import { LANG_LABEL, LANG_LIST } from '@/types/sku'
 import type { LangCode, SkuImage, SkuSlotId } from '@/types/sku'
+import { isFail, templatesApi, type Template } from '@/data/platformApi'
 
 const router = useRouter()
+const route = useRoute()
 const store = useProductCardsStore()
 const auth = useAuthStore()
 
@@ -33,6 +35,9 @@ onMounted(async () => {
     router.replace('/studios/product-cards')
     return
   }
+  // Шаблоны грузим без await: список нужен только на шаге 4, и ждать его
+  // здесь значило бы задержать автозапуск анализа.
+  void loadTemplates()
   // Автозапуск анализа, если пользователь только что загрузил фото
   if (d.value.step === 2 && !d.value.analysis) await runAnalyze()
   // Возобновление опроса незавершённых задач генерации после перезагрузки
@@ -200,6 +205,59 @@ function slotImage(id: SkuSlotId): SkuImage | undefined {
 
 const extraSlots = computed(() => SLOT_DEFS.filter((s) => s.id !== 'main'))
 
+/* ─────────── Шаблоны ─────────── */
+
+const templates = ref<Template[]>([])
+const selectedTemplateId = ref('')
+const templateNotice = ref('')
+
+const activeTemplate = computed(
+  () => templates.value.find((t) => t.id === selectedTemplateId.value) || null,
+)
+
+/** Группируем по верхнему уровню категории — плоский список нечитаем. */
+const templateGroups = computed(() => {
+  const map = new Map<string, Template[]>()
+  for (const t of templates.value) {
+    const key = t.category[0] || 'Без категории'
+    const arr = map.get(key)
+    if (arr) arr.push(t)
+    else map.set(key, [t])
+  }
+  return [...map.entries()]
+    .sort(([a], [b]) => a.localeCompare(b, 'ru'))
+    .map(([label, items]) => ({ label, items }))
+})
+
+async function loadTemplates() {
+  const res = await templatesApi.list()
+  if (isFail(res)) return
+  templates.value = res.templates
+  // Пришли из «Применить» на /templates — подставляем шаблон сразу.
+  const fromQuery = String(route.query.template || '')
+  if (fromQuery && res.templates.some((t) => t.id === fromQuery)) {
+    selectedTemplateId.value = fromQuery
+    onTemplateChange()
+  }
+}
+
+/**
+ * Референсов может быть больше, чем выбранных ракурсов: тогда лишние просто не
+ * применятся. Предупреждаем заранее, иначе пользователь решит, что шаблон
+ * сработал не полностью из-за ошибки.
+ */
+function onTemplateChange() {
+  templateNotice.value = ''
+  const t = activeTemplate.value
+  if (!t) return
+  const slotCount = new Set(['main', ...d.value.selectedSlots]).size
+  if (t.references.length > slotCount) {
+    templateNotice.value = `Референсов ${t.references.length}, а ракурсов выбрано ${slotCount} — лишние не применятся. Добавьте ракурсы ниже.`
+  }
+}
+
+watch(() => d.value.selectedSlots.length, onTemplateChange)
+
 const imagesDone = computed(() => d.value.images.filter((i) => i.state === 'success').length)
 const imagesTotal = computed(() => d.value.images.length)
 const imagesPending = computed(() => d.value.images.some((i) => i.state === 'processing'))
@@ -218,7 +276,11 @@ async function runImages() {
     productPrompt: d.value.analysis.imagePrompt,
     slots,
     settings: d.value.imageSettings,
+    templateId: selectedTemplateId.value || undefined,
   })
+  // Счётчик применений — не блокирует генерацию, поэтому без await и без
+  // проверки результата: статистика не должна ломать основной сценарий.
+  if (selectedTemplateId.value) void templatesApi.use(selectedTemplateId.value)
   busy.value = false
 
   if (!res.ok) {
@@ -389,7 +451,7 @@ function addExtraPhoto() {
 </script>
 
 <template>
-  <div class="page-narrow space-y-5 animate-fade-in">
+  <div class="page space-y-5 animate-fade-in">
     <input ref="extraInput" type="file" accept="image/*" class="hidden" />
 
     <!-- Навигация назад -->
@@ -443,7 +505,7 @@ function addExtraPhoto() {
       <div>
         <div class="flex items-center gap-2">
           <h2 class="text-lg font-extrabold text-ink-900">AI-анализ товара</h2>
-          <span class="chip bg-violet-100 text-violet-700 !text-[10px] !px-2 !py-0.5">AI</span>
+          <span class="chip bg-brand-100 text-brand-700 !text-[10px] !px-2 !py-0.5">AI</span>
         </div>
         <p class="text-xs text-ink-400 mt-1">
           Мы проанализировали изображение и распознали основные характеристики товара.
@@ -452,7 +514,7 @@ function addExtraPhoto() {
 
       <!-- Загрузка -->
       <div v-if="busy && !d.analysis" class="card p-10 text-center">
-        <span class="inline-grid place-items-center w-14 h-14 rounded-2xl bg-violet-50 text-violet-600 animate-pulse">
+        <span class="inline-grid place-items-center w-14 h-14 rounded-2xl bg-brand-50 text-brand-600 animate-pulse">
           <Icon name="sparkles" :size="26" />
         </span>
         <p class="text-sm font-bold text-ink-900 mt-4">{{ busyText }}</p>
@@ -467,7 +529,7 @@ function addExtraPhoto() {
       <!-- Повтор при ошибке -->
       <div v-else-if="!d.analysis" class="card p-10 text-center">
         <p class="text-sm font-bold text-ink-900">Анализ не выполнен</p>
-        <button type="button" class="btn btn-md btn-violet mt-4" @click="runAnalyze">
+        <button type="button" class="btn btn-md btn-brand mt-4" @click="runAnalyze">
           <Icon name="refresh" :size="16" />
           Повторить анализ
         </button>
@@ -481,19 +543,19 @@ function addExtraPhoto() {
             <img v-if="previewSrc" :src="previewSrc" alt="" class="w-full h-full object-contain" />
           </div>
           <div class="flex gap-2">
-            <span class="w-11 h-12 rounded-lg border-2 border-violet-500 overflow-hidden bg-ink-50 shrink-0">
+            <span class="w-11 h-12 rounded-lg border-2 border-brand-500 overflow-hidden bg-ink-50 shrink-0">
               <img v-if="previewSrc" :src="previewSrc" alt="" class="w-full h-full object-cover" />
             </span>
             <button
               type="button"
-              class="w-11 h-12 rounded-lg border border-dashed border-ink-200 grid place-items-center text-ink-400 hover:border-violet-400 hover:text-violet-600 transition text-[9px] font-semibold leading-tight"
+              class="w-11 h-12 rounded-lg border border-dashed border-ink-200 grid place-items-center text-ink-400 hover:border-brand-400 hover:text-brand-600 transition text-[9px] font-semibold leading-tight"
               @click="addExtraPhoto"
             >
               <Icon name="plus" :size="14" />
             </button>
           </div>
           <div class="card p-2.5 flex items-center gap-2.5">
-            <span class="grid place-items-center w-8 h-8 rounded-lg bg-violet-50 text-violet-600 shrink-0">
+            <span class="grid place-items-center w-8 h-8 rounded-lg bg-brand-50 text-brand-600 shrink-0">
               <Icon name="file" :size="15" />
             </span>
             <span class="min-w-0 flex-1">
@@ -524,7 +586,7 @@ function addExtraPhoto() {
 
           <ul class="mt-4 space-y-3">
             <li v-for="f in analysisFields" :key="f.label" class="flex items-start gap-2.5">
-              <span class="grid place-items-center w-7 h-7 rounded-lg bg-violet-50 text-violet-600 shrink-0">
+              <span class="grid place-items-center w-7 h-7 rounded-lg bg-brand-50 text-brand-600 shrink-0">
                 <Icon :name="f.icon" :size="14" />
               </span>
               <span class="min-w-0">
@@ -596,7 +658,7 @@ function addExtraPhoto() {
           <Icon name="arrowLeft" :size="16" />
           Назад
         </button>
-        <button type="button" class="btn btn-md btn-violet flex-1 sm:flex-none" :disabled="busy" @click="runContent(false)">
+        <button type="button" class="btn btn-md btn-brand flex-1 sm:flex-none" :disabled="busy" @click="runContent(false)">
           Сгенерировать контент и перейти к следующему шагу
           <Icon name="arrowRight" :size="16" />
         </button>
@@ -612,7 +674,7 @@ function addExtraPhoto() {
         <div>
           <div class="flex items-center gap-2 flex-wrap">
             <h2 class="text-lg font-extrabold text-ink-900">Генерация контента</h2>
-            <span class="chip bg-violet-100 text-violet-700 !text-[10px] !px-2 !py-0.5">AI</span>
+            <span class="chip bg-brand-100 text-brand-700 !text-[10px] !px-2 !py-0.5">AI</span>
             <span
               v-if="d.sku"
               class="chip bg-emerald-50 text-emerald-700 !text-[10px] !px-2 !py-0.5 font-mono"
@@ -637,7 +699,7 @@ function addExtraPhoto() {
       </div>
 
       <div v-if="busy" class="card p-10 text-center">
-        <span class="inline-grid place-items-center w-14 h-14 rounded-2xl bg-violet-50 text-violet-600 animate-pulse">
+        <span class="inline-grid place-items-center w-14 h-14 rounded-2xl bg-brand-50 text-brand-600 animate-pulse">
           <Icon name="edit" :size="26" />
         </span>
         <p class="text-sm font-bold text-ink-900 mt-4">{{ busyText }}</p>
@@ -651,7 +713,7 @@ function addExtraPhoto() {
 
       <div v-else-if="!cur" class="card p-10 text-center">
         <p class="text-sm font-bold text-ink-900">Контент не создан</p>
-        <button type="button" class="btn btn-md btn-violet mt-4" @click="runContent(true)">
+        <button type="button" class="btn btn-md btn-brand mt-4" @click="runContent(true)">
           <Icon name="refresh" :size="16" />
           Сгенерировать
         </button>
@@ -669,7 +731,7 @@ function addExtraPhoto() {
               class="px-3 py-2 text-xs font-bold border-b-2 -mb-px transition"
               :class="
                 activeTab === t
-                  ? 'border-violet-600 text-violet-700'
+                  ? 'border-brand-600 text-brand-700'
                   : 'border-transparent text-ink-400 hover:text-ink-700'
               "
               @click="activeTab = t"
@@ -687,7 +749,7 @@ function addExtraPhoto() {
               class="px-3 h-7 rounded-lg text-[11px] font-bold transition border"
               :class="
                 d.activeLang === l
-                  ? 'bg-violet-50 border-violet-300 text-violet-700'
+                  ? 'bg-brand-50 border-brand-300 text-brand-700'
                   : d.content[l]
                     ? 'bg-white border-ink-200 text-ink-600 hover:border-ink-900'
                     : 'bg-ink-50 border-ink-100 text-ink-300 cursor-not-allowed'
@@ -777,7 +839,7 @@ function addExtraPhoto() {
                   class="px-2.5 h-7 rounded-lg text-[11px] font-semibold border transition"
                   :class="
                     d.tone === t
-                      ? 'bg-violet-50 border-violet-300 text-violet-700'
+                      ? 'bg-brand-50 border-brand-300 text-brand-700'
                       : 'bg-white border-ink-200 text-ink-500 hover:border-ink-900'
                   "
                   @click="d.tone = t; store.persistDraft()"
@@ -789,13 +851,13 @@ function addExtraPhoto() {
 
             <div class="flex items-center justify-between pt-1">
               <span class="flex items-center gap-2 text-xs font-semibold text-ink-600">
-                <Icon name="sparkles" :size="15" class="text-violet-600" />
+                <Icon name="sparkles" :size="15" class="text-brand-600" />
                 Добавить преимущества
               </span>
               <button
                 type="button"
                 class="w-11 h-6 rounded-full transition relative shrink-0"
-                :class="d.withAdvantages ? 'bg-violet-600' : 'bg-ink-200'"
+                :class="d.withAdvantages ? 'bg-brand-600' : 'bg-ink-200'"
                 @click="d.withAdvantages = !d.withAdvantages"
               >
                 <span
@@ -954,7 +1016,7 @@ function addExtraPhoto() {
         <button type="button" class="btn btn-md btn-outline" @click="store.persistDraft()">
           Сохранить черновик
         </button>
-        <button type="button" class="btn btn-md btn-violet" :disabled="busy" @click="goStep(4)">
+        <button type="button" class="btn btn-md btn-brand" :disabled="busy" @click="goStep(4)">
           Продолжить
           <Icon name="arrowRight" :size="16" />
         </button>
@@ -981,7 +1043,7 @@ function addExtraPhoto() {
             <img v-if="previewSrc" :src="previewSrc" alt="" class="w-full h-full object-contain" />
           </div>
           <div class="flex gap-2 mt-3">
-            <span class="w-12 h-14 rounded-lg border-2 border-violet-500 overflow-hidden bg-ink-50 shrink-0">
+            <span class="w-12 h-14 rounded-lg border-2 border-brand-500 overflow-hidden bg-ink-50 shrink-0">
               <img v-if="previewSrc" :src="previewSrc" alt="" class="w-full h-full object-cover" />
             </span>
             <span
@@ -993,7 +1055,7 @@ function addExtraPhoto() {
             </span>
             <button
               type="button"
-              class="w-12 h-14 rounded-lg border border-dashed border-ink-200 grid place-items-center text-ink-400 hover:border-violet-400 hover:text-violet-600 transition text-[8px] font-semibold leading-tight text-center"
+              class="w-12 h-14 rounded-lg border border-dashed border-ink-200 grid place-items-center text-ink-400 hover:border-brand-400 hover:text-brand-600 transition text-[8px] font-semibold leading-tight text-center"
               @click="addExtraPhoto"
             >
               <span>
@@ -1013,6 +1075,62 @@ function addExtraPhoto() {
 
         <!-- Дополнительные изображения -->
         <div class="card p-4">
+          <!-- Шаблон: его референсы заменяют стандартные фото карточки -->
+          <div class="mb-4 pb-4 border-b border-ink-100">
+            <div class="flex items-center gap-2 mb-2">
+              <p class="text-xs font-bold text-ink-900">Шаблон</p>
+              <RouterLink
+                to="/templates"
+                class="ml-auto text-[11px] text-ink-500 hover:text-ink-900 underline"
+              >
+                управлять
+              </RouterLink>
+            </div>
+
+            <select v-model="selectedTemplateId" class="input h-9 text-xs" @change="onTemplateChange">
+              <option value="">Без шаблона — стандартные ракурсы</option>
+              <optgroup
+                v-for="grp in templateGroups"
+                :key="grp.label"
+                :label="grp.label"
+              >
+                <option v-for="t in grp.items" :key="t.id" :value="t.id">
+                  {{ t.name }} · {{ t.references.length }} реф.
+                </option>
+              </optgroup>
+            </select>
+
+            <div v-if="activeTemplate" class="mt-3">
+              <p class="text-[11px] text-ink-500 mb-2">
+                Референсы шаблона подставятся вместо стандартных фото карточки:
+              </p>
+              <div class="flex flex-wrap gap-2">
+                <div
+                  v-for="r in activeTemplate.references"
+                  :key="r.id"
+                  class="w-12 h-14 rounded-lg overflow-hidden bg-ink-100 border border-ink-200 relative"
+                  :title="`${r.label || 'Референс'}: ${r.prompt || 'без промта'}`"
+                >
+                  <img
+                    v-if="r.image"
+                    :src="r.image"
+                    alt=""
+                    class="w-full h-full object-cover"
+                  />
+                  <span
+                    v-else
+                    class="absolute inset-0 grid place-items-center text-[8px] text-ink-500 text-center leading-tight px-0.5"
+                  >
+                    промт
+                  </span>
+                </div>
+              </div>
+              <p v-if="templateNotice" class="text-[11px] text-amber-700 mt-2">
+                {{ templateNotice }}
+              </p>
+            </div>
+          </div>
+
           <p class="text-xs font-bold text-ink-900 mb-3">
             Дополнительные изображения
             <span class="font-normal text-ink-400">(рекомендуется)</span>
@@ -1026,7 +1144,7 @@ function addExtraPhoto() {
               class="rounded-xl border overflow-hidden text-left transition group"
               :class="
                 slotSelected(s.id)
-                  ? 'border-violet-300 ring-1 ring-violet-200'
+                  ? 'border-brand-300 ring-1 ring-brand-200'
                   : 'border-ink-100 hover:border-ink-300 opacity-70'
               "
               @click="toggleSlot(s.id)"
@@ -1054,8 +1172,8 @@ function addExtraPhoto() {
                   class="absolute inset-0 bg-white/70 backdrop-blur-[1px] grid place-items-center"
                 >
                   <span class="flex flex-col items-center gap-1.5">
-                    <Icon name="refresh" :size="18" class="text-violet-600 animate-spin" />
-                    <span class="text-[9px] font-bold text-violet-700">Генерация…</span>
+                    <Icon name="refresh" :size="18" class="text-brand-600 animate-spin" />
+                    <span class="text-[9px] font-bold text-brand-700">Генерация…</span>
                   </span>
                 </div>
 
@@ -1080,7 +1198,7 @@ function addExtraPhoto() {
                   class="absolute left-2 bottom-2 chip !text-[9px] !px-1.5 !py-0.5 !rounded-md"
                   :class="{
                     'bg-emerald-100 text-emerald-700': slotImage(s.id)?.state === 'success',
-                    'bg-violet-100 text-violet-700':
+                    'bg-brand-100 text-brand-700':
                       !slotImage(s.id) && slotSelected(s.id) && s.mode !== 'optional',
                     'bg-ink-100 text-ink-500': !slotSelected(s.id) || s.mode === 'optional',
                   }"
@@ -1094,7 +1212,7 @@ function addExtraPhoto() {
                   class="absolute right-2 top-2 w-4 h-4 rounded border grid place-items-center transition"
                   :class="
                     slotSelected(s.id)
-                      ? 'bg-violet-600 border-violet-600 text-white'
+                      ? 'bg-brand-600 border-brand-600 text-white'
                       : 'bg-white/90 border-ink-300 text-transparent'
                   "
                 >
@@ -1110,13 +1228,13 @@ function addExtraPhoto() {
               <span class="text-ink-600">
                 Готово {{ imagesDone }} из {{ imagesTotal }}
               </span>
-              <span class="text-violet-600">
+              <span class="text-brand-600">
                 {{ Math.round((imagesDone / imagesTotal) * 100) }}%
               </span>
             </div>
             <div class="h-1.5 rounded-full bg-ink-100 overflow-hidden">
               <div
-                class="h-full bg-violet-600 rounded-full transition-all duration-700"
+                class="h-full bg-brand-600 rounded-full transition-all duration-700"
                 :style="{ width: `${(imagesDone / imagesTotal) * 100}%` }"
               />
             </div>
@@ -1138,14 +1256,14 @@ function addExtraPhoto() {
               class="w-full flex items-center gap-2 px-2.5 h-8 rounded-lg border text-[11px] font-semibold transition"
               :class="
                 d.imageSettings.style === o
-                  ? 'bg-violet-50 border-violet-300 text-violet-700'
+                  ? 'bg-brand-50 border-brand-300 text-brand-700'
                   : 'bg-white border-ink-100 text-ink-500 hover:border-ink-300'
               "
               @click="d.imageSettings.style = o"
             >
               <span
                 class="w-3 h-3 rounded-full border-2 shrink-0"
-                :class="d.imageSettings.style === o ? 'border-violet-600 bg-violet-600' : 'border-ink-300'"
+                :class="d.imageSettings.style === o ? 'border-brand-600 bg-brand-600' : 'border-ink-300'"
               />
               {{ o }}
             </button>
@@ -1160,7 +1278,7 @@ function addExtraPhoto() {
               class="w-full flex items-center gap-2 px-2.5 h-8 rounded-lg border text-[11px] font-semibold transition"
               :class="
                 d.imageSettings.background === o
-                  ? 'bg-violet-50 border-violet-300 text-violet-700'
+                  ? 'bg-brand-50 border-brand-300 text-brand-700'
                   : 'bg-white border-ink-100 text-ink-500 hover:border-ink-300'
               "
               @click="d.imageSettings.background = o"
@@ -1168,7 +1286,7 @@ function addExtraPhoto() {
               <span
                 class="w-3 h-3 rounded-full border-2 shrink-0"
                 :class="
-                  d.imageSettings.background === o ? 'border-violet-600 bg-violet-600' : 'border-ink-300'
+                  d.imageSettings.background === o ? 'border-brand-600 bg-brand-600' : 'border-ink-300'
                 "
               />
               {{ o }}
@@ -1180,7 +1298,7 @@ function addExtraPhoto() {
             <button
               type="button"
               class="w-9 h-5 rounded-full transition relative shrink-0"
-              :class="d.imageSettings.shadow ? 'bg-violet-600' : 'bg-ink-200'"
+              :class="d.imageSettings.shadow ? 'bg-brand-600' : 'bg-ink-200'"
               @click="d.imageSettings.shadow = !d.imageSettings.shadow"
             >
               <span
@@ -1197,7 +1315,7 @@ function addExtraPhoto() {
               class="w-full flex items-center gap-2 px-2.5 h-8 rounded-lg border text-[11px] font-semibold transition"
               :class="
                 d.imageSettings.shadowType === o
-                  ? 'bg-violet-50 border-violet-300 text-violet-700'
+                  ? 'bg-brand-50 border-brand-300 text-brand-700'
                   : 'bg-white border-ink-100 text-ink-500 hover:border-ink-300'
               "
               @click="d.imageSettings.shadowType = o"
@@ -1205,7 +1323,7 @@ function addExtraPhoto() {
               <span
                 class="w-3 h-3 rounded-full border-2 shrink-0"
                 :class="
-                  d.imageSettings.shadowType === o ? 'border-violet-600 bg-violet-600' : 'border-ink-300'
+                  d.imageSettings.shadowType === o ? 'border-brand-600 bg-brand-600' : 'border-ink-300'
                 "
               />
               {{ o }}
@@ -1219,9 +1337,9 @@ function addExtraPhoto() {
             <option v-for="o in qualityOptions" :key="o" :value="o">{{ o }}</option>
           </select>
 
-          <div class="mt-4 p-2.5 rounded-lg bg-violet-50 flex gap-2">
-            <Icon name="sparkles" :size="14" class="text-violet-600 shrink-0 mt-0.5" />
-            <p class="text-[10px] text-violet-800 leading-relaxed">
+          <div class="mt-4 p-2.5 rounded-lg bg-brand-50 flex gap-2">
+            <Icon name="sparkles" :size="14" class="text-brand-600 shrink-0 mt-0.5" />
+            <p class="text-[10px] text-brand-800 leading-relaxed">
               Будет создано до {{ d.selectedSlots.length + 1 }} изображений в разных форматах для
               маркетплейсов и сайта.
             </p>
@@ -1237,7 +1355,7 @@ function addExtraPhoto() {
         <button
           v-if="!imagesTotal"
           type="button"
-          class="btn btn-md btn-violet flex-1 sm:flex-none sm:min-w-[320px]"
+          class="btn btn-md btn-brand flex-1 sm:flex-none sm:min-w-[320px]"
           :disabled="busy"
           @click="runImages"
         >
@@ -1251,7 +1369,7 @@ function addExtraPhoto() {
           </button>
           <button
             type="button"
-            class="btn btn-md btn-violet flex-1 sm:flex-none sm:min-w-[240px]"
+            class="btn btn-md btn-brand flex-1 sm:flex-none sm:min-w-[240px]"
             :disabled="imagesPending || !imagesDone"
             @click="finish"
           >
@@ -1280,12 +1398,12 @@ function addExtraPhoto() {
                   Карточка товара успешно создана!
                 </h2>
                 <p class="text-sm text-ink-500 mt-1.5">
-                  SKU: <span class="font-bold text-violet-700">{{ d.sku }}</span> добавлен в каталог
+                  SKU: <span class="font-bold text-brand-700">{{ d.sku }}</span> добавлен в каталог
                 </p>
               </div>
             </div>
             <div class="flex flex-wrap gap-2 mt-5">
-              <button type="button" class="btn btn-md btn-violet" @click="openCard">
+              <button type="button" class="btn btn-md btn-brand" @click="openCard">
                 Открыть карточку товара
               </button>
               <button type="button" class="btn btn-md btn-outline" @click="startNew">
@@ -1318,7 +1436,7 @@ function addExtraPhoto() {
                     v-for="(u, i) in galleryUrls.slice(0, 5)"
                     :key="u"
                     class="w-10 h-12 rounded-lg overflow-hidden bg-ink-50 shrink-0 border"
-                    :class="i === 0 ? 'border-violet-500' : 'border-ink-100'"
+                    :class="i === 0 ? 'border-brand-500' : 'border-ink-100'"
                   >
                     <img :src="u" alt="" class="w-full h-full object-cover" />
                   </span>
@@ -1391,7 +1509,7 @@ function addExtraPhoto() {
           <!-- Что дальше -->
           <div class="grid md:grid-cols-[minmax(0,1fr)_auto] gap-3 items-center">
             <div class="card p-4 flex gap-3">
-              <span class="grid place-items-center w-9 h-9 rounded-xl bg-violet-50 text-violet-600 shrink-0">
+              <span class="grid place-items-center w-9 h-9 rounded-xl bg-brand-50 text-brand-600 shrink-0">
                 <Icon name="sparkles" :size="17" />
               </span>
               <div>
@@ -1408,13 +1526,13 @@ function addExtraPhoto() {
                   <Icon name="download" :size="16" />
                   Экспортировать
                 </button>
-                <button type="button" class="btn btn-md btn-violet" @click="openCard">
+                <button type="button" class="btn btn-md btn-brand" @click="openCard">
                   Открыть карточку товара
                   <Icon name="arrowRight" :size="16" />
                 </button>
               </div>
               <label class="flex items-center gap-2 justify-end text-[11px] text-ink-500 cursor-pointer">
-                <input v-model="createAnother" type="checkbox" class="accent-violet-600" />
+                <input v-model="createAnother" type="checkbox" class="accent-brand-600" />
                 Создать ещё одну карточку после открытия
               </label>
             </div>
@@ -1474,7 +1592,7 @@ function addExtraPhoto() {
             </ul>
             <button
               type="button"
-              class="btn btn-sm w-full mt-4 bg-violet-50 text-violet-700 hover:bg-violet-100"
+              class="btn btn-sm w-full mt-4 bg-brand-50 text-brand-700 hover:bg-brand-100"
               @click="openCard"
             >
               Посмотреть все каналы

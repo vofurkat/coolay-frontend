@@ -1,18 +1,18 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 
-const section = (path: string, name: string, title: string, description: string, icon: string) => ({
-  path,
-  name,
-  component: () => import('@/views/SectionView.vue'),
-  meta: { title, description, icon },
-})
+/**
+ * SectionView (страница-заглушка «раздел в разработке») больше не используется:
+ * /templates и /projects/shared получили настоящие экраны. Хелпер section()
+ * удалён вместе с ними — он маскировал отсутствие функциональности, а держать
+ * его «на будущее» значит рисковать, что новый раздел снова выйдет заглушкой.
+ */
 
 /**
  * Разделы, скрытые по запросу заказчика.
  * Маршруты удалены, но прямые ссылки (закладки, история браузера, внешние
  * ссылки) не должны приводить в пустоту — beforeEach уводит их на главную.
- * Чтобы вернуть раздел: убрать путь отсюда и восстановить его section().
+ * Чтобы вернуть раздел: убрать путь отсюда и добавить обычный маршрут.
  */
 const HIDDEN_PATHS = [
   '/studios/photo',
@@ -104,13 +104,17 @@ const router = createRouter({
           component: () => import('@/views/ToolWorkspaceView.vue'),
           meta: { title: 'Инструмент' },
         },
-        section(
-          'templates',
-          'templates',
-          'Шаблоны',
-          'Готовые форматы и пресеты, чтобы не настраивать одно и то же каждый раз.',
-          'layout',
-        ),
+        {
+          path: 'templates',
+          name: 'templates',
+          component: () => import('@/views/TemplatesView.vue'),
+          meta: {
+            title: 'Шаблоны',
+            description:
+              'Референсы и промты по категориям товара — подставляются при генерации карточки.',
+            icon: 'layout',
+          },
+        },
 
         // Проекты — здесь хранятся сгенерированные SKU-карточки
         {
@@ -124,13 +128,17 @@ const router = createRouter({
             icon: 'folder',
           },
         },
-        section(
-          'projects/shared',
-          'projects-shared',
-          'Общие со мной',
-          'Проекты, которыми с вами поделились — совместная работа команды.',
-          'folderShared',
-        ),
+        {
+          path: 'projects/shared',
+          name: 'projects-shared',
+          component: () => import('@/views/SharedProjectsView.vue'),
+          meta: {
+            title: 'Общие со мной',
+            description:
+              'Проекты, которыми с вами поделились — совместная работа команды.',
+            icon: 'folderShared',
+          },
+        },
         // Служебные (доступ из топбара / настроек)
         {
           path: 'history',

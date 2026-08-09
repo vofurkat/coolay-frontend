@@ -64,7 +64,7 @@ function fmt(iso: string) {
 </script>
 
 <template>
-  <div class="p-4 sm:p-6 lg:p-8 max-w-[1400px] mx-auto space-y-6 animate-fade-in">
+  <div class="page space-y-6 animate-fade-in">
     <PageHeader title="История генераций" subtitle="Все созданные изображения — кто, чем и с какого устройства">
       <template #actions>
         <div class="flex items-center rounded-xl border border-ink-200 bg-white p-0.5">

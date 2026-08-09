@@ -21,9 +21,11 @@ BACKUP_DIR="/var/www/demo.coolay.website/dist-backups"
 URL="https://demo.coolay.website"
 BACKEND_SRC_DIR="/var/www/webapp/coolay-backend"
 BACKEND_TARGET_DIR="/var/www/demo.coolay.website/backend"
-# Модули бэкенда, которые публикуются на прод. sku.js обязателен:
-# server.js импортирует из него skuRouter, без файла процесс не поднимется.
-BACKEND_FILES=(server.js sku.js env.js)
+# Модули бэкенда, которые публикуются на прод.
+# ВАЖНО: список должен содержать ВСЕ файлы, которые импортирует server.js.
+# Любой пропущенный модуль — это падение процесса при старте (ERR_MODULE_NOT_FOUND),
+# потому что импорты в ES-модулях разрешаются сразу при загрузке.
+BACKEND_FILES=(server.js sku.js env.js store.js templates.js team.js telegram.js)
 
 log()  { printf '\033[1;32m▸\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m!\033[0m %s\n' "$*"; }
@@ -81,7 +83,9 @@ BACKEND_CHANGED=0
 for f in "${BACKEND_FILES[@]}"; do
   SRC_F="$BACKEND_SRC_DIR/$f"
   DST_F="$BACKEND_TARGET_DIR/$f"
-  [[ -f "$SRC_F" ]] || { warn "нет $SRC_F — пропускаю"; continue; }
+  # Отсутствующий модуль — фатально, а не предупреждение: server.js импортирует
+  # его статически, и после перезапуска прод упал бы с ERR_MODULE_NOT_FOUND.
+  [[ -f "$SRC_F" ]] || die "Нет $SRC_F, но он есть в BACKEND_FILES — деплой остановлен"
   if ! cmp -s "$SRC_F" "$DST_F"; then
     log "$f изменился — копирую в backend"
     mkdir -p "$BACKEND_TARGET_DIR"

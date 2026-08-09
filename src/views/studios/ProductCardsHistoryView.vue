@@ -128,7 +128,7 @@ function exportAll() {
         </button>
         <RouterLink
           to="/studios/product-cards"
-          class="btn btn-violet h-10 px-4 text-sm font-semibold whitespace-nowrap"
+          class="btn btn-brand h-10 px-4 text-sm font-semibold whitespace-nowrap"
         >
           <Icon name="plus" :size="15" />
           Создать карточку
@@ -148,7 +148,7 @@ function exportAll() {
           v-model="query"
           type="text"
           placeholder="Поиск по названию, SKU, ID или категории…"
-          class="w-full h-10 pl-9 pr-3 rounded-xl border border-ink-200 text-sm outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
+          class="w-full h-10 pl-9 pr-3 rounded-xl border border-ink-200 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
         />
       </label>
 
@@ -169,7 +169,7 @@ function exportAll() {
 
       <select
         v-model="sort"
-        class="h-10 px-3 rounded-xl border border-ink-200 text-sm outline-none focus:border-violet-400 bg-white"
+        class="h-10 px-3 rounded-xl border border-ink-200 text-sm outline-none focus:border-brand-400 bg-white"
       >
         <option value="new">Сначала новые</option>
         <option value="old">Сначала старые</option>
@@ -198,8 +198,8 @@ function exportAll() {
 
     <!-- Пусто -->
     <div v-if="!filtered.length" class="card p-10 text-center">
-      <div class="mx-auto h-14 w-14 rounded-2xl bg-violet-50 grid place-items-center">
-        <Icon name="history" :size="24" class="text-violet-600" />
+      <div class="mx-auto h-14 w-14 rounded-2xl bg-brand-50 grid place-items-center">
+        <Icon name="history" :size="24" class="text-brand-600" />
       </div>
       <h3 class="mt-4 text-base font-bold text-ink-900">
         {{ store.cards.length ? 'Ничего не найдено' : 'Пока нет созданных карточек' }}
@@ -214,7 +214,7 @@ function exportAll() {
       <RouterLink
         v-if="!store.cards.length"
         to="/studios/product-cards"
-        class="btn btn-violet h-10 px-5 text-sm font-semibold mt-5 inline-flex"
+        class="btn btn-brand h-10 px-5 text-sm font-semibold mt-5 inline-flex"
       >
         <Icon name="upload" :size="15" />
         Загрузить фото
@@ -270,7 +270,7 @@ function exportAll() {
             <span
               v-for="l in langsReady(c)"
               :key="l"
-              class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-violet-50 text-violet-700"
+              class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-brand-50 text-brand-700"
             >
               {{ LANG_LABEL[l] }}
             </span>

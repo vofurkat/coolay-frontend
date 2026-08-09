@@ -88,6 +88,8 @@ export function createImages(params: {
   productPrompt: string
   slots: SkuSlotId[]
   settings: SkuImageSettings
+  /** Шаблон: его референсы заменяют стандартные фото карточки. */
+  templateId?: string
 }) {
   return post<ImagesOk>('/api/sku/images', params)
 }

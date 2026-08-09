@@ -37,7 +37,7 @@ function clickable(id: number) {
           class="grid place-items-center w-6 h-6 rounded-full shrink-0 text-[11px] font-bold mt-0.5 transition"
           :class="{
             'bg-emerald-50 text-emerald-600 ring-1 ring-emerald-200': state(s.id) === 'done',
-            'bg-violet-600 text-white': state(s.id) === 'active',
+            'bg-brand-600 text-white': state(s.id) === 'active',
             'bg-ink-100 text-ink-400': state(s.id) === 'todo',
           }"
         >

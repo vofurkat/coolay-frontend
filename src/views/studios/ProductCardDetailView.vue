@@ -103,7 +103,7 @@ const CH_LABEL: Record<ChannelStatus, string> = {
 const CH_TONE: Record<ChannelStatus, string> = {
   ready: 'bg-emerald-50 text-emerald-700',
   check: 'bg-amber-50 text-amber-700',
-  published: 'bg-violet-50 text-violet-700',
+  published: 'bg-brand-50 text-brand-700',
   draft: 'bg-ink-100 text-ink-500',
 }
 
@@ -275,7 +275,7 @@ function removeCard() {
       </p>
       <RouterLink
         to="/studios/product-cards/history"
-        class="btn btn-violet h-10 px-5 text-sm font-semibold mt-5 inline-flex"
+        class="btn btn-brand h-10 px-5 text-sm font-semibold mt-5 inline-flex"
       >
         <Icon name="history" :size="15" />
         К истории карточек
@@ -312,7 +312,7 @@ function removeCard() {
         <p class="text-xs text-ink-400 mt-1.5 font-mono flex items-center gap-1.5 flex-wrap">
           <span>SKU: {{ card.sku }}</span>
           <button
-            class="text-ink-300 hover:text-violet-600"
+            class="text-ink-300 hover:text-brand-600"
             title="Скопировать SKU"
             @click="copy(card.sku)"
           >
@@ -349,7 +349,7 @@ function removeCard() {
         </button>
         <RouterLink
           to="/studios/product-cards"
-          class="btn btn-violet h-9 px-4 text-xs font-semibold"
+          class="btn btn-brand h-9 px-4 text-xs font-semibold"
         >
           <Icon name="plus" :size="14" />
           Новая карточка
@@ -366,7 +366,7 @@ function removeCard() {
           class="h-10 px-3.5 inline-flex items-center gap-1.5 text-xs font-bold border-b-2 -mb-px transition whitespace-nowrap"
           :class="
             tab === t.id
-              ? 'border-violet-600 text-violet-700'
+              ? 'border-brand-600 text-brand-700'
               : 'border-transparent text-ink-400 hover:text-ink-700'
           "
           @click="tab = t.id"
@@ -399,7 +399,7 @@ function removeCard() {
                   v-for="(g, i) in gallery.slice(0, 5)"
                   :key="g.url"
                   class="h-12 w-12 shrink-0 rounded-lg overflow-hidden border-2 transition"
-                  :class="activeImage === i ? 'border-violet-600' : 'border-transparent opacity-70 hover:opacity-100'"
+                  :class="activeImage === i ? 'border-brand-600' : 'border-transparent opacity-70 hover:opacity-100'"
                   @click="activeImage = i"
                 >
                   <img :src="g.url" alt="" class="w-full h-full object-cover" />
@@ -439,7 +439,7 @@ function removeCard() {
                   </h3>
                   <button
                     v-if="editing !== 'name'"
-                    class="text-[11px] font-semibold text-violet-600 hover:text-violet-800 inline-flex items-center gap-1"
+                    class="text-[11px] font-semibold text-brand-600 hover:text-brand-800 inline-flex items-center gap-1"
                     @click="startEdit('name', cur?.name || '')"
                   >
                     <Icon name="edit" :size="11" /> Редактировать
@@ -449,11 +449,11 @@ function removeCard() {
                   v-if="editing === 'name'"
                   v-model="editBuffer"
                   rows="2"
-                  class="w-full p-2.5 rounded-xl border border-violet-300 text-sm outline-none focus:ring-2 focus:ring-violet-100 resize-none"
+                  class="w-full p-2.5 rounded-xl border border-brand-300 text-sm outline-none focus:ring-2 focus:ring-brand-100 resize-none"
                 />
                 <p v-else class="text-sm font-semibold text-ink-900">{{ cur?.name || '—' }}</p>
                 <div v-if="editing === 'name'" class="flex gap-2 mt-2">
-                  <button class="btn btn-violet h-8 px-3 text-[11px] font-bold" @click="saveEdit">
+                  <button class="btn btn-brand h-8 px-3 text-[11px] font-bold" @click="saveEdit">
                     Сохранить
                   </button>
                   <button
@@ -473,7 +473,7 @@ function removeCard() {
                   </h3>
                   <button
                     v-if="editing !== 'short'"
-                    class="text-[11px] font-semibold text-violet-600 hover:text-violet-800 inline-flex items-center gap-1"
+                    class="text-[11px] font-semibold text-brand-600 hover:text-brand-800 inline-flex items-center gap-1"
                     @click="startEdit('short', cur?.short || '')"
                   >
                     <Icon name="edit" :size="11" /> Редактировать
@@ -483,11 +483,11 @@ function removeCard() {
                   v-if="editing === 'short'"
                   v-model="editBuffer"
                   rows="3"
-                  class="w-full p-2.5 rounded-xl border border-violet-300 text-sm outline-none focus:ring-2 focus:ring-violet-100 resize-none"
+                  class="w-full p-2.5 rounded-xl border border-brand-300 text-sm outline-none focus:ring-2 focus:ring-brand-100 resize-none"
                 />
                 <p v-else class="text-sm text-ink-600 leading-relaxed">{{ cur?.short || '—' }}</p>
                 <div v-if="editing === 'short'" class="flex gap-2 mt-2">
-                  <button class="btn btn-violet h-8 px-3 text-[11px] font-bold" @click="saveEdit">
+                  <button class="btn btn-brand h-8 px-3 text-[11px] font-bold" @click="saveEdit">
                     Сохранить
                   </button>
                   <button
@@ -524,7 +524,7 @@ function removeCard() {
               <h3 class="text-sm font-bold text-ink-900">Полное описание</h3>
               <button
                 v-if="editing !== 'full'"
-                class="text-[11px] font-semibold text-violet-600 hover:text-violet-800 inline-flex items-center gap-1"
+                class="text-[11px] font-semibold text-brand-600 hover:text-brand-800 inline-flex items-center gap-1"
                 @click="startEdit('full', cur?.full || '')"
               >
                 <Icon name="edit" :size="11" /> Редактировать
@@ -534,13 +534,13 @@ function removeCard() {
               v-if="editing === 'full'"
               v-model="editBuffer"
               rows="10"
-              class="w-full p-3 rounded-xl border border-violet-300 text-sm outline-none focus:ring-2 focus:ring-violet-100 leading-relaxed"
+              class="w-full p-3 rounded-xl border border-brand-300 text-sm outline-none focus:ring-2 focus:ring-brand-100 leading-relaxed"
             />
             <p v-else class="text-sm text-ink-600 leading-relaxed whitespace-pre-line">
               {{ cur?.full || '—' }}
             </p>
             <div v-if="editing === 'full'" class="flex gap-2 mt-2">
-              <button class="btn btn-violet h-8 px-3 text-[11px] font-bold" @click="saveEdit">
+              <button class="btn btn-brand h-8 px-3 text-[11px] font-bold" @click="saveEdit">
                 Сохранить
               </button>
               <button
@@ -557,7 +557,7 @@ function removeCard() {
             <div class="flex items-center justify-between mb-3">
               <h3 class="text-sm font-bold text-ink-900">Характеристики</h3>
               <button
-                class="text-[11px] font-semibold text-violet-600 hover:text-violet-800"
+                class="text-[11px] font-semibold text-brand-600 hover:text-brand-800"
                 @click="tab = 'specs'"
               >
                 Все ({{ card.specs.length }})
@@ -612,7 +612,7 @@ function removeCard() {
                 <textarea
                   :value="cur.name"
                   rows="2"
-                  class="w-full p-2.5 rounded-xl border border-ink-200 text-sm outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 resize-none"
+                  class="w-full p-2.5 rounded-xl border border-ink-200 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100 resize-none"
                   @change="
                     (e) => {
                       editing = 'name'
@@ -631,7 +631,7 @@ function removeCard() {
                 <textarea
                   :value="cur.short"
                   rows="3"
-                  class="w-full p-2.5 rounded-xl border border-ink-200 text-sm outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 resize-none"
+                  class="w-full p-2.5 rounded-xl border border-ink-200 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100 resize-none"
                   @change="
                     (e) => {
                       editing = 'short'
@@ -650,7 +650,7 @@ function removeCard() {
                 <textarea
                   :value="cur.full"
                   rows="12"
-                  class="w-full p-3 rounded-xl border border-ink-200 text-sm leading-relaxed outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
+                  class="w-full p-3 rounded-xl border border-ink-200 text-sm leading-relaxed outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
                   @change="
                     (e) => {
                       editing = 'full'
@@ -749,13 +749,13 @@ function removeCard() {
                 <input
                   :value="s.label"
                   placeholder="Название"
-                  class="h-9 px-2.5 rounded-lg border border-ink-200 text-xs outline-none focus:border-violet-400"
+                  class="h-9 px-2.5 rounded-lg border border-ink-200 text-xs outline-none focus:border-brand-400"
                   @change="updateSpec(i, 'label', ($event.target as HTMLInputElement).value)"
                 />
                 <input
                   :value="s.value"
                   placeholder="Значение"
-                  class="h-9 px-2.5 rounded-lg border border-ink-200 text-xs outline-none focus:border-violet-400"
+                  class="h-9 px-2.5 rounded-lg border border-ink-200 text-xs outline-none focus:border-brand-400"
                   @change="updateSpec(i, 'value', ($event.target as HTMLInputElement).value)"
                 />
                 <button
@@ -809,7 +809,7 @@ function removeCard() {
                 </div>
                 <input
                   :value="cur.seo.title"
-                  class="w-full h-10 px-3 rounded-xl border border-ink-200 text-sm outline-none focus:border-violet-400"
+                  class="w-full h-10 px-3 rounded-xl border border-ink-200 text-sm outline-none focus:border-brand-400"
                   readonly
                 />
               </div>
@@ -827,7 +827,7 @@ function removeCard() {
                 <textarea
                   :value="cur.seo.description"
                   rows="3"
-                  class="w-full p-2.5 rounded-xl border border-ink-200 text-sm outline-none focus:border-violet-400 resize-none"
+                  class="w-full p-2.5 rounded-xl border border-ink-200 text-sm outline-none focus:border-brand-400 resize-none"
                   readonly
                 />
               </div>
@@ -840,7 +840,7 @@ function removeCard() {
                   <span
                     v-for="(k, i) in cur.seo.keywords"
                     :key="i"
-                    class="px-2.5 py-1 rounded-lg bg-violet-50 text-violet-700 text-[11px] font-semibold"
+                    class="px-2.5 py-1 rounded-lg bg-brand-50 text-brand-700 text-[11px] font-semibold"
                   >
                     {{ k }}
                   </span>
@@ -888,7 +888,7 @@ function removeCard() {
                   :class="
                     ch.status === 'published'
                       ? 'border border-ink-200 text-ink-600'
-                      : 'btn-violet'
+                      : 'btn-brand'
                   "
                   @click="toggleChannel(ch.id)"
                 >
@@ -908,11 +908,11 @@ function removeCard() {
                 v-for="v in card.versions"
                 :key="v.id"
                 class="flex items-center gap-3 p-3 rounded-xl border transition"
-                :class="v.current ? 'border-violet-300 bg-violet-50/50' : 'border-ink-100'"
+                :class="v.current ? 'border-brand-300 bg-brand-50/50' : 'border-ink-100'"
               >
                 <span
                   class="h-9 w-14 shrink-0 rounded-lg grid place-items-center text-[11px] font-extrabold"
-                  :class="v.current ? 'bg-violet-600 text-white' : 'bg-ink-100 text-ink-600'"
+                  :class="v.current ? 'bg-brand-600 text-white' : 'bg-ink-100 text-ink-600'"
                 >
                   {{ v.label }}
                 </span>
@@ -922,7 +922,7 @@ function removeCard() {
                 </div>
                 <span
                   v-if="v.current"
-                  class="px-2 py-1 rounded-lg bg-violet-100 text-violet-700 text-[10px] font-bold shrink-0"
+                  class="px-2 py-1 rounded-lg bg-brand-100 text-brand-700 text-[10px] font-bold shrink-0"
                 >
                   Текущая
                 </span>
@@ -946,9 +946,9 @@ function removeCard() {
               <span class="absolute left-[7px] top-1.5 bottom-1.5 w-px bg-ink-100" />
               <li v-for="a in card.activity" :key="a.id" class="relative">
                 <span
-                  class="absolute -left-5 top-0.5 h-4 w-4 rounded-full bg-violet-50 ring-2 ring-white grid place-items-center"
+                  class="absolute -left-5 top-0.5 h-4 w-4 rounded-full bg-brand-50 ring-2 ring-white grid place-items-center"
                 >
-                  <Icon :name="a.icon" :size="9" class="text-violet-600" />
+                  <Icon :name="a.icon" :size="9" class="text-brand-600" />
                 </span>
                 <p class="text-xs font-semibold text-ink-800 leading-snug">{{ a.text }}</p>
                 <p class="text-[11px] text-ink-400 mt-0.5">
@@ -1076,7 +1076,7 @@ function removeCard() {
                 Title, description и {{ cur?.seo.keywords.length || 0 }} ключевых слов.
               </p>
               <button
-                class="text-[11px] font-bold text-violet-600 hover:text-violet-800 mt-1"
+                class="text-[11px] font-bold text-brand-600 hover:text-brand-800 mt-1"
                 @click="tab = 'seo'"
               >
                 Открыть SEO →
@@ -1086,14 +1086,14 @@ function removeCard() {
         </div>
 
         <!-- AI-ассистент -->
-        <div class="card p-4 bg-gradient-to-br from-violet-50 to-white border border-violet-100">
+        <div class="card p-4 bg-gradient-to-br from-brand-50 to-white border border-brand-100">
           <div class="flex items-center gap-2 mb-2">
-            <span class="h-8 w-8 rounded-xl bg-violet-600 grid place-items-center">
+            <span class="h-8 w-8 rounded-xl bg-brand-600 grid place-items-center">
               <Icon name="robot" :size="15" class="text-white" />
             </span>
             <div>
               <p class="text-xs font-bold text-ink-900">AI-ассистент</p>
-              <p class="text-[10px] text-violet-600 font-bold tracking-wide">BETA</p>
+              <p class="text-[10px] text-brand-600 font-bold tracking-wide">BETA</p>
             </div>
           </div>
           <p class="text-[11px] text-ink-500 leading-snug mb-2.5">
@@ -1102,19 +1102,19 @@ function removeCard() {
           <div class="flex flex-wrap gap-1.5">
             <RouterLink
               to="/studios/product-cards"
-              class="px-2.5 py-1.5 rounded-lg bg-white border border-violet-200 text-[11px] font-semibold text-violet-700 hover:bg-violet-50"
+              class="px-2.5 py-1.5 rounded-lg bg-white border border-brand-200 text-[11px] font-semibold text-brand-700 hover:bg-brand-50"
             >
               Улучшить описание
             </RouterLink>
             <RouterLink
               to="/studios/product-cards"
-              class="px-2.5 py-1.5 rounded-lg bg-white border border-violet-200 text-[11px] font-semibold text-violet-700 hover:bg-violet-50"
+              class="px-2.5 py-1.5 rounded-lg bg-white border border-brand-200 text-[11px] font-semibold text-brand-700 hover:bg-brand-50"
             >
               Добавить фото
             </RouterLink>
             <RouterLink
               to="/studios/product-cards"
-              class="px-2.5 py-1.5 rounded-lg bg-white border border-violet-200 text-[11px] font-semibold text-violet-700 hover:bg-violet-50"
+              class="px-2.5 py-1.5 rounded-lg bg-white border border-brand-200 text-[11px] font-semibold text-brand-700 hover:bg-brand-50"
             >
               Адаптировать под WB
             </RouterLink>
@@ -1129,7 +1129,7 @@ function removeCard() {
         <div class="flex items-center justify-between mb-3">
           <h3 class="text-sm font-bold text-ink-900">Версии карточки</h3>
           <button
-            class="text-[11px] font-semibold text-violet-600 hover:text-violet-800"
+            class="text-[11px] font-semibold text-brand-600 hover:text-brand-800"
             @click="tab = 'versions'"
           >
             Все версии
@@ -1140,11 +1140,11 @@ function removeCard() {
             v-for="v in card.versions.slice(0, 3)"
             :key="v.id"
             class="flex items-center gap-3 p-2.5 rounded-xl"
-            :class="v.current ? 'bg-violet-50/60' : 'bg-ink-50/60'"
+            :class="v.current ? 'bg-brand-50/60' : 'bg-ink-50/60'"
           >
             <span
               class="h-8 w-12 shrink-0 rounded-lg grid place-items-center text-[11px] font-extrabold"
-              :class="v.current ? 'bg-violet-600 text-white' : 'bg-white text-ink-600'"
+              :class="v.current ? 'bg-brand-600 text-white' : 'bg-white text-ink-600'"
             >
               {{ v.label }}
             </span>
@@ -1156,7 +1156,7 @@ function removeCard() {
             </div>
             <span
               v-if="v.current"
-              class="px-2 py-0.5 rounded text-[10px] font-bold bg-violet-100 text-violet-700"
+              class="px-2 py-0.5 rounded text-[10px] font-bold bg-brand-100 text-brand-700"
             >
               Текущая
             </span>
@@ -1168,7 +1168,7 @@ function removeCard() {
         <div class="flex items-center justify-between mb-3">
           <h3 class="text-sm font-bold text-ink-900">Последняя активность</h3>
           <button
-            class="text-[11px] font-semibold text-violet-600 hover:text-violet-800"
+            class="text-[11px] font-semibold text-brand-600 hover:text-brand-800"
             @click="tab = 'history'"
           >
             Вся история
@@ -1178,9 +1178,9 @@ function removeCard() {
           <span class="absolute left-[7px] top-1.5 bottom-1.5 w-px bg-ink-100" />
           <li v-for="a in card.activity.slice(0, 5)" :key="a.id" class="relative">
             <span
-              class="absolute -left-5 top-0.5 h-4 w-4 rounded-full bg-violet-50 ring-2 ring-white grid place-items-center"
+              class="absolute -left-5 top-0.5 h-4 w-4 rounded-full bg-brand-50 ring-2 ring-white grid place-items-center"
             >
-              <Icon :name="a.icon" :size="9" class="text-violet-600" />
+              <Icon :name="a.icon" :size="9" class="text-brand-600" />
             </span>
             <p class="text-xs font-semibold text-ink-800 leading-snug">{{ a.text }}</p>
             <p class="text-[11px] text-ink-400 mt-0.5">{{ a.author }} · {{ ago(a.createdAt) }}</p>

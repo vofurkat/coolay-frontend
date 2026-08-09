@@ -41,7 +41,7 @@ function toggle(id: string) {
 </script>
 
 <template>
-  <div class="p-4 sm:p-6 lg:p-8 max-w-[1400px] mx-auto space-y-6 animate-fade-in">
+  <div class="page space-y-6 animate-fade-in">
     <PageHeader
       title="Интеграции"
       subtitle="Подключите ERP, Telegram- и WhatsApp-ботов для работы с каталогом и генерациями"

@@ -41,7 +41,7 @@ const scenarios = [
     title: 'Мои проекты',
     text: 'Все сгенерированные SKU-карточки собраны в одном рабочем пространстве.',
     icon: 'folder',
-    tone: 'bg-violet-50 text-violet-600',
+    tone: 'bg-brand-50 text-brand-600',
     action: 'projects' as const,
   },
 ]
@@ -182,7 +182,7 @@ function continueDraft() {
         <ol class="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           <li v-for="s in howSteps" :key="s.n" class="flex gap-3 lg:flex-col lg:gap-2">
             <span
-              class="grid place-items-center w-7 h-7 rounded-lg bg-violet-100 text-violet-700 text-xs font-extrabold shrink-0"
+              class="grid place-items-center w-7 h-7 rounded-lg bg-brand-100 text-brand-700 text-xs font-extrabold shrink-0"
             >
               {{ s.n }}
             </span>
@@ -208,10 +208,10 @@ function continueDraft() {
     <!-- Незавершённый мастер -->
     <section
       v-if="store.hasDraft"
-      class="card mt-4 border-violet-200 bg-violet-50/60 p-4 sm:px-5 flex flex-col sm:flex-row sm:items-center gap-3"
+      class="card mt-4 border-brand-200 bg-brand-50/60 p-4 sm:px-5 flex flex-col sm:flex-row sm:items-center gap-3"
     >
       <span
-        class="grid place-items-center w-10 h-10 rounded-xl bg-violet-100 text-violet-600 shrink-0"
+        class="grid place-items-center w-10 h-10 rounded-xl bg-brand-100 text-brand-600 shrink-0"
       >
         <Icon name="history" :size="20" />
       </span>
@@ -225,7 +225,7 @@ function continueDraft() {
         <button type="button" class="btn btn-sm btn-ghost" @click="store.resetDraft()">
           Начать заново
         </button>
-        <button type="button" class="btn btn-sm btn-violet" @click="continueDraft">
+        <button type="button" class="btn btn-sm btn-brand" @click="continueDraft">
           Продолжить
           <Icon name="arrowRight" :size="15" />
         </button>
@@ -235,7 +235,7 @@ function continueDraft() {
     <!-- ───────── Главный CTA ───────── -->
     <section
       class="card mt-5 p-5 sm:p-6 lg:p-7 grid gap-6 lg:gap-8 lg:grid-cols-[minmax(0,1fr)_300px] lg:items-center transition"
-      :class="dragOver ? 'border-violet-400 ring-4 ring-violet-100' : ''"
+      :class="dragOver ? 'border-brand-400 ring-4 ring-brand-100' : ''"
       @dragover.prevent="dragOver = true"
       @dragleave.prevent="dragOver = false"
       @drop.prevent="onDrop"
@@ -243,7 +243,7 @@ function continueDraft() {
       <div class="min-w-0">
         <div class="flex items-start gap-4">
           <span
-            class="grid place-items-center w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-violet-100 text-violet-600 shrink-0"
+            class="grid place-items-center w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-brand-100 text-brand-600 shrink-0"
           >
             <Icon name="shoppingBag" :size="26" />
           </span>
@@ -258,7 +258,7 @@ function continueDraft() {
         </div>
 
         <div class="flex flex-wrap gap-2.5 mt-5">
-          <button type="button" class="btn btn-md btn-violet" @click="pickFile">
+          <button type="button" class="btn btn-md btn-brand" @click="pickFile">
             <Icon name="upload" :size="17" />
             Загрузить фото
           </button>
@@ -278,7 +278,7 @@ function continueDraft() {
 
       <!-- Иллюстрация карточки -->
       <div class="rounded-2xl bg-ink-50 border border-ink-100 overflow-hidden select-none">
-        <div class="h-7 bg-violet-600 flex items-center gap-1.5 px-3">
+        <div class="h-7 bg-brand-600 flex items-center gap-1.5 px-3">
           <span class="w-2 h-2 rounded-full bg-white/50" />
           <span class="w-2 h-2 rounded-full bg-white/50" />
           <span class="w-2 h-2 rounded-full bg-white/50" />
@@ -290,13 +290,13 @@ function continueDraft() {
             <Icon name="shirt" :size="28" />
           </div>
           <div class="flex-1 space-y-2 pt-1 min-w-0">
-            <div class="h-2.5 rounded-full bg-violet-200 w-4/5" />
+            <div class="h-2.5 rounded-full bg-brand-200 w-4/5" />
             <div class="h-2 rounded-full bg-ink-200 w-full" />
             <div class="h-2 rounded-full bg-ink-200 w-11/12" />
             <div class="h-2 rounded-full bg-ink-200 w-3/5" />
             <div class="flex gap-1.5 pt-1.5">
               <span class="h-4 w-10 rounded bg-emerald-100" />
-              <span class="h-4 w-10 rounded bg-violet-100" />
+              <span class="h-4 w-10 rounded bg-brand-100" />
             </div>
           </div>
         </div>
@@ -333,7 +333,7 @@ function continueDraft() {
           <span class="text-sm font-bold text-ink-900 leading-snug">{{ s.title }}</span>
           <span class="text-xs text-ink-500 mt-1.5 leading-relaxed flex-1">{{ s.text }}</span>
           <span
-            class="self-end mt-3 grid place-items-center w-7 h-7 rounded-full bg-ink-50 text-ink-400 group-hover:bg-violet-600 group-hover:text-white transition"
+            class="self-end mt-3 grid place-items-center w-7 h-7 rounded-full bg-ink-50 text-ink-400 group-hover:bg-brand-600 group-hover:text-white transition"
           >
             <Icon name="arrowRight" :size="14" />
           </span>
@@ -351,7 +351,7 @@ function continueDraft() {
           </h2>
           <RouterLink
             to="/studios/product-cards/history"
-            class="text-xs font-bold text-violet-600 hover:text-violet-700 shrink-0"
+            class="text-xs font-bold text-brand-600 hover:text-brand-700 shrink-0"
           >
             Смотреть все
           </RouterLink>
@@ -398,7 +398,7 @@ function continueDraft() {
           <p class="text-xs text-ink-500 mt-1">
             Загрузите первое фото товара — карточка появится здесь.
           </p>
-          <button type="button" class="btn btn-sm btn-violet mt-4" @click="pickFile">
+          <button type="button" class="btn btn-sm btn-brand mt-4" @click="pickFile">
             <Icon name="upload" :size="15" />
             Загрузить фото
           </button>
@@ -409,11 +409,11 @@ function continueDraft() {
       <section class="card p-4 flex flex-col min-w-0">
         <div class="flex items-center gap-2 mb-3">
           <h2 class="section-title">AI-ассистент</h2>
-          <span class="chip bg-violet-100 text-violet-700 !text-[10px] !px-2 !py-0.5">BETA</span>
+          <span class="chip bg-brand-100 text-brand-700 !text-[10px] !px-2 !py-0.5">BETA</span>
         </div>
         <div class="flex gap-2.5">
           <span
-            class="grid place-items-center w-9 h-9 rounded-xl bg-violet-50 text-violet-600 shrink-0"
+            class="grid place-items-center w-9 h-9 rounded-xl bg-brand-50 text-brand-600 shrink-0"
           >
             <Icon name="robot" :size="18" />
           </span>
@@ -423,7 +423,7 @@ function continueDraft() {
         </div>
         <button
           type="button"
-          class="btn btn-sm w-full mt-4 bg-violet-50 text-violet-700 hover:bg-violet-100"
+          class="btn btn-sm w-full mt-4 bg-brand-50 text-brand-700 hover:bg-brand-100"
         >
           <Icon name="sparkles" :size="15" />
           Открыть ассистента
@@ -433,7 +433,7 @@ function continueDraft() {
             v-for="chip in assistantChips"
             :key="chip"
             type="button"
-            class="chip bg-ink-50 text-ink-600 border border-ink-100 !rounded-lg !text-[11px] hover:border-violet-300 hover:text-violet-700 transition"
+            class="chip bg-ink-50 text-ink-600 border border-ink-100 !rounded-lg !text-[11px] hover:border-brand-300 hover:text-brand-700 transition"
             @click="chip.includes('фото') ? pickFile() : null"
           >
             {{ chip }}

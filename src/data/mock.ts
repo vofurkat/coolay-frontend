@@ -194,7 +194,7 @@ export interface HomeScenario {
   description: string
   to: string
   icon: string
-  tone: 'mint' | 'sky' | 'rose' | 'amber' | 'violet' | 'lime'
+  tone: 'mint' | 'sky' | 'rose' | 'amber' | 'brand' | 'lime'
   image: string
 }
 
@@ -223,7 +223,7 @@ export const homeScenarios: HomeScenario[] = [
     description: 'Сгенерированные карточки и статусы работы',
     to: '/projects',
     icon: 'folder',
-    tone: 'violet',
+    tone: 'brand',
     image: '/dashboard/handbag.webp',
   },
   {
@@ -312,7 +312,7 @@ export const homeActivity: HomeActivity[] = [
     title: 'Сгенерировано 4 изображения',
     time: 'Вчера, 16:42',
     icon: 'sparkles',
-    tone: 'bg-violet-50 text-violet-700',
+    tone: 'bg-brand-50 text-brand-700',
     to: '/history',
   },
   {

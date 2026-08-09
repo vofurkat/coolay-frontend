@@ -156,7 +156,7 @@ function readyTone(v: number) {
           <Icon name="download" :size="15" />
           Экспорт
         </button>
-        <RouterLink to="/studios/product-cards" class="btn btn-sm btn-violet">
+        <RouterLink to="/studios/product-cards" class="btn btn-sm btn-brand">
           <Icon name="plus" :size="15" />
           Новая карточка
         </RouterLink>
@@ -166,7 +166,7 @@ function readyTone(v: number) {
     <!-- ───────── Сводка ───────── -->
     <div v-if="stats.total" class="grid gap-3 grid-cols-2 xl:grid-cols-4">
       <div class="card p-4 flex items-center gap-3">
-        <span class="grid place-items-center w-10 h-10 rounded-xl bg-violet-50 text-violet-600 shrink-0">
+        <span class="grid place-items-center w-10 h-10 rounded-xl bg-brand-50 text-brand-600 shrink-0">
           <Icon name="card" :size="19" />
         </span>
         <div class="min-w-0">
@@ -215,7 +215,7 @@ function readyTone(v: number) {
           v-model="query"
           type="text"
           placeholder="Поиск по названию, SKU, ID или категории…"
-          class="w-full h-10 pl-9 pr-3 rounded-xl border border-ink-200 text-sm outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
+          class="w-full h-10 pl-9 pr-3 rounded-xl border border-ink-200 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
         />
       </label>
 
@@ -235,7 +235,7 @@ function readyTone(v: number) {
 
       <select
         v-model="sort"
-        class="h-10 px-3 rounded-xl border border-ink-200 text-sm outline-none focus:border-violet-400 bg-white shrink-0"
+        class="h-10 px-3 rounded-xl border border-ink-200 text-sm outline-none focus:border-brand-400 bg-white shrink-0"
         aria-label="Сортировка"
       >
         <option value="new">Сначала новые</option>
@@ -268,8 +268,8 @@ function readyTone(v: number) {
 
     <!-- ───────── Пусто ───────── -->
     <div v-if="!filtered.length" class="card p-10 text-center">
-      <div class="mx-auto h-14 w-14 rounded-2xl bg-violet-50 grid place-items-center">
-        <Icon name="folder" :size="24" class="text-violet-600" />
+      <div class="mx-auto h-14 w-14 rounded-2xl bg-brand-50 grid place-items-center">
+        <Icon name="folder" :size="24" class="text-brand-600" />
       </div>
       <h2 class="mt-4 text-base font-bold text-ink-900">
         {{ store.cards.length ? 'Ничего не найдено' : 'Проектов пока нет' }}
@@ -284,7 +284,7 @@ function readyTone(v: number) {
       <RouterLink
         v-if="!store.cards.length"
         to="/studios/product-cards"
-        class="btn btn-md btn-violet mt-5 inline-flex"
+        class="btn btn-md btn-brand mt-5 inline-flex"
       >
         <Icon name="sparkles" :size="16" />
         Создать карточку
@@ -330,7 +330,7 @@ function readyTone(v: number) {
           >
             <button
               type="button"
-              class="h-7 w-7 rounded-lg bg-white/95 grid place-items-center text-ink-400 hover:text-violet-600"
+              class="h-7 w-7 rounded-lg bg-white/95 grid place-items-center text-ink-400 hover:text-brand-600"
               :title="c.status === 'archived' ? 'Вернуть из архива' : 'В архив'"
               @click.stop="archive(c)"
             >
@@ -355,7 +355,7 @@ function readyTone(v: number) {
             <span
               v-for="l in langsReady(c)"
               :key="l"
-              class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-violet-50 text-violet-700"
+              class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-brand-50 text-brand-700"
             >
               {{ LANG_LABEL[l] }}
             </span>
@@ -439,7 +439,7 @@ function readyTone(v: number) {
           <div class="hidden md:flex items-center justify-end gap-1">
             <button
               type="button"
-              class="h-8 w-8 grid place-items-center rounded-lg text-ink-300 hover:text-violet-600 hover:bg-violet-50"
+              class="h-8 w-8 grid place-items-center rounded-lg text-ink-300 hover:text-brand-600 hover:bg-brand-50"
               :title="c.status === 'archived' ? 'Вернуть из архива' : 'В архив'"
               @click.stop="archive(c)"
             >
