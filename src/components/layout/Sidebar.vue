@@ -2,17 +2,12 @@
 import { RouterLink, useRoute } from 'vue-router'
 import { computed, type Component } from 'vue'
 import {
-  Boxes,
-  Camera,
   CreditCard,
   Folder,
   Gift,
+  History,
   House,
-  Images,
-  Layers3,
   LayoutGrid,
-  Shirt,
-  Store,
   Users,
   WandSparkles,
 } from '@lucide/vue'
@@ -27,6 +22,13 @@ type NavItem = {
   to: string
   badge?: string
   exact?: boolean
+  /**
+   * Вложенные пути, которые НЕ должны подсвечивать этот пункт.
+   * Нужно потому, что «Карточки товара» (/studios/product-cards) является
+   * префиксом для «История карточек» (/studios/product-cards/history) —
+   * без исключения подсвечивались бы сразу два пункта.
+   */
+  exclude?: string[]
 }
 
 type NavSection = {
@@ -46,6 +48,13 @@ const homeItem: NavItem = {
   exact: true,
 }
 
+/**
+ * Скрытые разделы (по запросу заказчика): Фото-студия, Fashion-студия,
+ * Каталог-студия, Маркетплейсы, Пакетная обработка, Медиа библиотека.
+ * Пункты убраны из навигации, а их маршруты редиректят на главную —
+ * см. HIDDEN_PATHS в router/index.ts. Возврат = раскомментировать пункт
+ * здесь и убрать путь из HIDDEN_PATHS.
+ */
 const sections: NavSection[] = [
   {
     key: 'studios',
@@ -57,30 +66,13 @@ const sections: NavSection[] = [
         icon: CreditCard,
         to: '/studios/product-cards',
         badge: 'Новое',
+        exclude: ['/studios/product-cards/history'],
       },
       {
-        name: 'studio-photo',
-        label: 'Фото-студия',
-        icon: Camera,
-        to: '/studios/photo',
-      },
-      {
-        name: 'studio-fashion',
-        label: 'Fashion-студия',
-        icon: Shirt,
-        to: '/studios/fashion',
-      },
-      {
-        name: 'studio-catalog',
-        label: 'Каталог-студия',
-        icon: Boxes,
-        to: '/studios/catalog',
-      },
-      {
-        name: 'studio-marketplaces',
-        label: 'Маркетплейсы',
-        icon: Store,
-        to: '/studios/marketplaces',
+        name: 'studio-product-cards-history',
+        label: 'История карточек',
+        icon: History,
+        to: '/studios/product-cards/history',
       },
     ],
   },
@@ -89,9 +81,7 @@ const sections: NavSection[] = [
     label: 'Инструменты',
     items: [
       { name: 'tools', label: 'Все инструменты', icon: LayoutGrid, to: '/tools' },
-      { name: 'batch', label: 'Пакетная обработка', icon: Layers3, to: '/batch' },
       { name: 'templates', label: 'Шаблоны', icon: WandSparkles, to: '/templates' },
-      { name: 'media', label: 'Медиа библиотека', icon: Images, to: '/media' },
     ],
   },
   {
@@ -116,6 +106,7 @@ const creditsPct = computed(() =>
 
 function isActive(item: NavItem) {
   if (item.exact || item.to === '/') return route.path === item.to
+  if (item.exclude?.some((p) => route.path === p || route.path.startsWith(p + '/'))) return false
   return route.path === item.to || route.path.startsWith(item.to + '/')
 }
 

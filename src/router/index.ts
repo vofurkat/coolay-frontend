@@ -8,6 +8,25 @@ const section = (path: string, name: string, title: string, description: string,
   meta: { title, description, icon },
 })
 
+/**
+ * Разделы, скрытые по запросу заказчика.
+ * Маршруты удалены, но прямые ссылки (закладки, история браузера, внешние
+ * ссылки) не должны приводить в пустоту — beforeEach уводит их на главную.
+ * Чтобы вернуть раздел: убрать путь отсюда и восстановить его section().
+ */
+const HIDDEN_PATHS = [
+  '/studios/photo',
+  '/studios/fashion',
+  '/studios/catalog',
+  '/studios/marketplaces',
+  '/batch',
+  '/media',
+]
+
+function isHidden(path: string) {
+  return HIDDEN_PATHS.some((p) => path === p || path.startsWith(p + '/'))
+}
+
 const router = createRouter({
   history: createWebHistory(),
   routes: [
@@ -32,41 +51,43 @@ const router = createRouter({
           },
         },
         // AI-студии
-        section(
-          'studios/product-cards',
-          'studio-product-cards',
-          'Карточки товара',
-          'Создание и улучшение товарных карточек: фото, название, описание, характеристики, SEO.',
-          'card',
-        ),
-        section(
-          'studios/photo',
-          'studio-photo',
-          'Фото-студия',
-          'Подготовка продающих фото товара: фон, свет, ракурс и качество.',
-          'camera',
-        ),
-        section(
-          'studios/fashion',
-          'studio-fashion',
-          'Fashion-студия',
-          'Работа с одеждой и fashion-каталогом: модель, посадка, образ, ткань и ракурс.',
-          'shirt',
-        ),
-        section(
-          'studios/catalog',
-          'studio-catalog',
-          'Каталог-студия',
-          'Массовая работа с ассортиментом: десятки и сотни SKU в одном потоке.',
-          'layers',
-        ),
-        section(
-          'studios/marketplaces',
-          'studio-marketplaces',
-          'Маркетплейсы',
-          'Адаптация фото и карточек под Wildberries, Ozon, Shopify и другие площадки.',
-          'shoppingBag',
-        ),
+        {
+          path: 'studios/product-cards',
+          name: 'studio-product-cards',
+          component: () => import('@/views/studios/ProductCardsStudioView.vue'),
+          meta: {
+            title: 'Карточки товара',
+            description:
+              'Создание и улучшение товарных карточек: фото, название, описание, характеристики, SEO.',
+            icon: 'card',
+          },
+        },
+        {
+          path: 'studios/product-cards/new',
+          name: 'studio-product-cards-new',
+          component: () => import('@/views/studios/ProductCardWizardView.vue'),
+          meta: {
+            title: 'Создание карточки товара',
+            description: 'AI создаёт карточку с описанием, характеристиками, SEO и изображениями.',
+            icon: 'card',
+          },
+        },
+        {
+          path: 'studios/product-cards/history',
+          name: 'studio-product-cards-history',
+          component: () => import('@/views/studios/ProductCardsHistoryView.vue'),
+          meta: {
+            title: 'История карточек товара',
+            description: 'Все созданные SKU-карточки: поиск, фильтры и быстрый переход.',
+            icon: 'card',
+          },
+        },
+        {
+          path: 'studios/product-cards/:id',
+          name: 'studio-product-card',
+          component: () => import('@/views/studios/ProductCardDetailView.vue'),
+          meta: { title: 'Карточка товара', icon: 'card' },
+        },
         // Инструменты
         {
           path: 'tools',
@@ -84,34 +105,25 @@ const router = createRouter({
           meta: { title: 'Инструмент' },
         },
         section(
-          'batch',
-          'batch',
-          'Пакетная обработка',
-          'Массовая обработка файлов — быстрый сценарий для больших объёмов.',
-          'layers',
-        ),
-        section(
           'templates',
           'templates',
           'Шаблоны',
           'Готовые форматы и пресеты, чтобы не настраивать одно и то же каждый раз.',
           'layout',
         ),
-        section(
-          'media',
-          'media',
-          'Медиа библиотека',
-          'Хранилище изображений, фонов, моделей, карточек и результатов генераций.',
-          'folder',
-        ),
-        // Проекты
-        section(
-          'projects',
-          'projects',
-          'Мои проекты',
-          'Личное рабочее пространство: товары, изображения, карточки и история работы.',
-          'folder',
-        ),
+
+        // Проекты — здесь хранятся сгенерированные SKU-карточки
+        {
+          path: 'projects',
+          name: 'projects',
+          component: () => import('@/views/ProjectsView.vue'),
+          meta: {
+            title: 'Мои проекты',
+            description:
+              'Рабочее пространство: сгенерированные карточки товаров, статусы и история работы.',
+            icon: 'folder',
+          },
+        },
         section(
           'projects/shared',
           'projects-shared',
@@ -155,6 +167,11 @@ router.beforeEach((to) => {
     return { name: 'login', query: { redirect: to.fullPath } }
   }
   if (to.name === 'login' && auth.isAuthenticated) {
+    return { name: 'home' }
+  }
+  // Скрытые разделы: уводим на главную явно, не полагаясь на catch-all —
+  // иначе такой путь мог бы осесть в ?redirect= и вернуть пользователя в никуда.
+  if (isHidden(to.path)) {
     return { name: 'home' }
   }
   document.title = to.meta.title ? `${to.meta.title} · Coolay Studio` : 'Coolay Studio'

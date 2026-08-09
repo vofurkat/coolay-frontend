@@ -29,3 +29,13 @@ coverage
 
 # TypeScript build info
 *.tsbuildinfo
+
+# E2E-артефакты (скриншоты прогонов)
+.e2e
+
+# Скриншоты визуальной проверки вёрстки (scripts/ui-shots.mjs)
+.ui
+
+# Секреты бэкенда
+backend/.env
+.env

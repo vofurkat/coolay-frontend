@@ -63,7 +63,7 @@ function openAssistant() {
             <p class="text-[9px] text-ink-400">Активных</p>
           </div>
         </RouterLink>
-        <RouterLink to="/studios/catalog" class="flex items-center gap-2.5 px-3 group">
+        <RouterLink to="/studios/product-cards/history" class="flex items-center gap-2.5 px-3 group">
           <span class="grid place-items-center w-9 h-9 rounded-xl bg-rose-50 text-rose-500 shrink-0">
             <Icon name="shoppingBag" :size="18" />
           </span>
@@ -208,12 +208,12 @@ function openAssistant() {
           <p class="text-[11px] text-ink-500 mt-1">
             Быстрые подсказки:
             <RouterLink to="/studios/product-cards" class="font-semibold text-ink-800 hover:underline">карточка товара</RouterLink>,
-            <RouterLink to="/studios/photo" class="font-semibold text-ink-800 hover:underline">фото-студия</RouterLink>
+            <RouterLink to="/studios/product-cards/history" class="font-semibold text-ink-800 hover:underline">история карточек</RouterLink>
             или
             <RouterLink to="/templates" class="font-semibold text-ink-800 hover:underline">готовые шаблоны</RouterLink>.
           </p>
         </div>
-        <button type="button" class="btn btn-md shrink-0 bg-[#7C5CFF] text-white hover:brightness-110" @click="openAssistant">
+        <button type="button" class="btn btn-md shrink-0 bg-[hsl(66.03deg_100%_55.1%)] text-ink-900 hover:brightness-110" @click="openAssistant">
           <Icon name="sparkles" :size="18" />
           Открыть ассистента
         </button>
