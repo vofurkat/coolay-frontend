@@ -106,9 +106,13 @@ const initials = computed(() =>
       :class="mobileOpen ? 'translate-x-0' : '-translate-x-full'"
     >
       <div class="px-5 py-5 flex items-center gap-2.5 border-b border-white/[0.07]">
-        <Logo dark />
+        <!-- min-w-0 + overflow-hidden: логотип ужимается, чтобы бейдж «Admin»
+             и кнопка закрытия всегда помещались в ширину сайдбара (264px). -->
+        <div class="sadmin-logo min-w-0 flex-1 overflow-hidden">
+          <Logo dark />
+        </div>
         <span
-          class="text-[10px] font-extrabold uppercase tracking-widest bg-accent text-ink-900 rounded-md px-2 py-1"
+          class="shrink-0 text-[10px] font-extrabold uppercase tracking-widest bg-accent text-ink-900 rounded-md px-2 py-1 leading-none"
         >
           Admin
         </span>
@@ -193,3 +197,17 @@ const initials = computed(() =>
     </div>
   </div>
 </template>
+
+<style scoped>
+/*
+ * Логотип в шапке сайдбара: исходный компонент Logo задаёт max-w-[222px],
+ * но при ширине сайдбара 264px вместе с бейджем «Admin» (и кнопкой закрытия
+ * на мобильных) картинка не помещается и бейдж вылезает за рамку.
+ * Ограничиваем картинку шириной её контейнера — она пропорционально ужмётся.
+ */
+.sadmin-logo :deep(img) {
+  max-width: 100%;
+  height: auto;
+  max-height: 32px;
+}
+</style>
