@@ -1,6 +1,18 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter, RouterLink } from 'vue-router'
+import {
+  Bell,
+  ChevronDown,
+  LogOut,
+  Menu,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Plus,
+  Search,
+  Settings,
+  Store,
+} from '@lucide/vue'
 import Icon from '@/components/ui/Icon.vue'
 import Avatar from '@/components/ui/Avatar.vue'
 import { useAppStore } from '@/stores/app'
@@ -13,6 +25,7 @@ const router = useRouter()
 const menuOpen = ref(false)
 const startOpen = ref(false)
 const query = ref('')
+const searchInput = ref<HTMLInputElement | null>(null)
 
 const searchHits = computed(() => {
   const q = query.value.trim().toLowerCase()
@@ -36,6 +49,16 @@ function onSearchEnter() {
   if (searchHits.value[0]) goSearch(searchHits.value[0].to)
   else router.push('/tools')
 }
+
+/** ⌘K / Ctrl+K фокусирует поиск — подсказка справа в инпуте обещает это. */
+function onHotkey(e: KeyboardEvent) {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+    e.preventDefault()
+    searchInput.value?.focus()
+  }
+}
+onMounted(() => window.addEventListener('keydown', onHotkey))
+onBeforeUnmount(() => window.removeEventListener('keydown', onHotkey))
 </script>
 
 <template>
@@ -44,21 +67,24 @@ function onSearchEnter() {
   >
     <button
       class="hidden lg:grid place-items-center w-10 h-10 rounded-xl text-ink-500 hover:bg-ink-100 transition"
+      :title="app.sidebarCollapsed ? 'Развернуть меню' : 'Свернуть меню'"
       @click="app.toggleSidebar"
     >
-      <Icon name="grid" :size="20" />
+      <PanelLeftOpen v-if="app.sidebarCollapsed" :size="20" :stroke-width="1.8" />
+      <PanelLeftClose v-else :size="20" :stroke-width="1.8" />
     </button>
     <button
       class="lg:hidden grid place-items-center w-10 h-10 rounded-xl text-ink-500 hover:bg-ink-100 transition"
       @click="app.toggleMobileSidebar"
     >
-      <Icon name="grid" :size="20" />
+      <Menu :size="20" :stroke-width="1.8" />
     </button>
 
     <!-- Search -->
     <div class="relative flex-1 max-w-xl">
-      <Icon name="search" :size="18" class="absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-400" />
+      <Search :size="18" :stroke-width="1.8" class="absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-400" />
       <input
+        ref="searchInput"
         v-model="query"
         type="text"
         placeholder="Найдите инструмент, товар, шаблон или проект…"
@@ -95,9 +121,9 @@ function onSearchEnter() {
         class="btn btn-dark btn-sm"
         @click="startOpen = !startOpen"
       >
-        <Icon name="plus" :size="18" />
+        <Plus :size="18" :stroke-width="2" />
         <span>Начать работу</span>
-        <Icon name="chevronDown" :size="14" />
+        <ChevronDown :size="14" :stroke-width="2" />
       </button>
       <div
         v-if="startOpen"
@@ -117,8 +143,8 @@ function onSearchEnter() {
       </div>
     </div>
 
-    <button class="relative grid place-items-center w-10 h-10 rounded-xl text-ink-500 hover:bg-ink-100 transition">
-      <Icon name="bell" :size="20" />
+    <button class="relative grid place-items-center w-10 h-10 rounded-xl text-ink-500 hover:bg-ink-100 transition" title="Уведомления">
+      <Bell :size="20" :stroke-width="1.8" />
       <span class="absolute top-2 right-2 w-2 h-2 rounded-full bg-red-500 ring-2 ring-white" />
     </button>
 
@@ -132,7 +158,7 @@ function onSearchEnter() {
           <div class="text-sm font-bold text-ink-900">{{ auth.user?.name }}</div>
           <div class="text-[11px] text-ink-400 font-medium">{{ auth.user?.role }}</div>
         </div>
-        <Icon name="chevronDown" :size="16" class="text-ink-400 hidden md:block" />
+        <ChevronDown :size="16" :stroke-width="2" class="text-ink-400 hidden md:block" />
       </button>
 
       <transition name="pop">
@@ -146,16 +172,16 @@ function onSearchEnter() {
             <div class="text-xs text-ink-400">{{ auth.user?.email }}</div>
           </div>
           <RouterLink to="/settings" class="flex items-center gap-3 px-3 h-10 rounded-lg text-sm font-medium text-ink-700 hover:bg-ink-50">
-            <Icon name="settings" :size="18" /> Настройки
+            <Settings :size="18" :stroke-width="1.8" /> Настройки
           </RouterLink>
           <RouterLink to="/integrations" class="flex items-center gap-3 px-3 h-10 rounded-lg text-sm font-medium text-ink-700 hover:bg-ink-50">
-            <Icon name="store" :size="18" /> Интеграции
+            <Store :size="18" :stroke-width="1.8" /> Интеграции
           </RouterLink>
           <button
             class="w-full flex items-center gap-3 px-3 h-10 rounded-lg text-sm font-medium text-red-600 hover:bg-red-50"
             @click="logout"
           >
-            <Icon name="logout" :size="18" /> Выйти
+            <LogOut :size="18" :stroke-width="1.8" /> Выйти
           </button>
         </div>
       </transition>

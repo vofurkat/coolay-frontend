@@ -113,24 +113,37 @@ function isActive(item: NavItem) {
   return route.path === item.to || route.path.startsWith(item.to + '/')
 }
 
+/**
+ * Единый стиль с админ-панелью (/sadmin): активный пункт — сплошная
+ * акцентная «пилюля» с тёмным текстом и лёгким свечением, неактивные —
+ * приглушённый белый с hover-подложкой. Иконки без квадратных боксов.
+ */
 function linkClass(item: NavItem) {
   const active = isActive(item)
   return [
-    'group relative flex items-center gap-3 rounded-xl px-3 h-11 font-semibold text-sm transition-all',
+    'group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-[13.5px] font-medium transition-colors',
+    collapsed.value ? 'justify-center px-0' : '',
     active
-      ? 'bg-white/[0.08] text-white'
-      : 'text-white/65 hover:text-white hover:bg-white/[0.06]',
+      ? 'bg-accent text-ink-900 font-bold shadow-lg shadow-accent/20'
+      : 'text-white/55 hover:text-white hover:bg-white/[0.06]',
   ]
+}
+
+function iconClass(item: NavItem) {
+  return isActive(item) ? 'text-ink-900' : 'text-white/40 group-hover:text-white/80'
 }
 </script>
 
 <template>
   <aside
-    class="h-full bg-sidebar text-white flex flex-col transition-all duration-300 ease-out"
-    :class="collapsed ? 'w-[76px]' : 'w-[280px]'"
+    class="h-full bg-ink-900 text-white flex flex-col transition-all duration-300 ease-out"
+    :class="collapsed ? 'w-[76px]' : 'w-[264px]'"
   >
     <!-- Logo -->
-    <div class="h-[68px] flex items-center px-5 shrink-0 border-b border-white/10">
+    <div
+      class="h-[68px] flex items-center shrink-0 border-b border-white/[0.07]"
+      :class="collapsed ? 'justify-center px-2' : 'px-5'"
+    >
       <RouterLink to="/">
         <Logo :collapsed="collapsed" dark />
       </RouterLink>
@@ -139,67 +152,64 @@ function linkClass(item: NavItem) {
     <!-- Nav -->
     <nav class="flex-1 overflow-y-auto no-scrollbar px-3 py-4 space-y-5">
       <!-- Главная -->
-      <ul class="space-y-1">
-        <li>
-          <RouterLink
-            :to="homeItem.to"
-            :class="linkClass(homeItem)"
-            :title="collapsed ? homeItem.label : ''"
-          >
-            <span
-              class="grid place-items-center w-8 h-8 rounded-lg shrink-0 transition-colors"
-              :class="isActive(homeItem) ? 'bg-accent text-ink-900' : 'bg-white/[0.06] text-white/80'"
-            >
-              <component :is="homeItem.icon" :size="18" :stroke-width="1.8" />
-            </span>
-            <span v-if="!collapsed" class="truncate">{{ homeItem.label }}</span>
-          </RouterLink>
-        </li>
-      </ul>
+      <div class="space-y-0.5">
+        <RouterLink
+          :to="homeItem.to"
+          :class="linkClass(homeItem)"
+          :title="collapsed ? homeItem.label : ''"
+        >
+          <component
+            :is="homeItem.icon"
+            :size="18"
+            :stroke-width="isActive(homeItem) ? 2.2 : 1.8"
+            class="shrink-0"
+            :class="iconClass(homeItem)"
+          />
+          <span v-if="!collapsed" class="truncate">{{ homeItem.label }}</span>
+        </RouterLink>
+      </div>
 
       <!-- Sections -->
       <div v-for="section in sections" :key="section.key">
         <p
           v-if="!collapsed"
-          class="px-3 mb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-white/35"
+          class="px-3 mb-1.5 text-[10px] font-bold uppercase tracking-widest text-white/30"
         >
           {{ section.label }}
         </p>
-        <ul class="space-y-0.5">
-          <li v-for="item in section.items" :key="item.name">
-            <RouterLink
-              :to="item.to"
-              :class="linkClass(item)"
-              :title="collapsed ? item.label : ''"
+        <div v-else class="mx-3 mb-2 border-t border-white/[0.07]" />
+        <div class="space-y-0.5">
+          <RouterLink
+            v-for="item in section.items"
+            :key="item.name"
+            :to="item.to"
+            :class="linkClass(item)"
+            :title="collapsed ? item.label : ''"
+          >
+            <component
+              :is="item.icon"
+              :size="18"
+              :stroke-width="isActive(item) ? 2.2 : 1.8"
+              class="shrink-0"
+              :class="iconClass(item)"
+            />
+            <span v-if="!collapsed" class="truncate flex-1">{{ item.label }}</span>
+            <span
+              v-if="!collapsed && item.badge && !isActive(item)"
+              class="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-accent text-ink-900 leading-none"
             >
-              <span
-                class="grid place-items-center w-8 h-8 rounded-lg shrink-0 transition-colors"
-                :class="
-                  isActive(item)
-                    ? 'bg-accent text-ink-900'
-                    : 'text-white/70 group-hover:text-white'
-                "
-              >
-                <component :is="item.icon" :size="18" :stroke-width="1.8" />
-              </span>
-              <span v-if="!collapsed" class="truncate flex-1">{{ item.label }}</span>
-              <span
-                v-if="!collapsed && item.badge"
-                class="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-accent text-ink-900 leading-none"
-              >
-                {{ item.badge }}
-              </span>
-            </RouterLink>
-          </li>
-        </ul>
+              {{ item.badge }}
+            </span>
+          </RouterLink>
+        </div>
       </div>
     </nav>
 
     <!-- Plan / Upgrade -->
-    <div class="p-3 shrink-0 border-t border-white/10">
+    <div class="p-3 shrink-0 border-t border-white/[0.07]">
       <div
         v-if="!collapsed"
-        class="rounded-2xl bg-white/[0.05] border border-white/10 p-4 mb-3"
+        class="rounded-2xl bg-white/[0.05] border border-white/[0.07] p-4 mb-3"
       >
         <!-- Скелет на время первой загрузки: без него блок «прыгает» с нулей
              на реальные цифры, и это читается как баг. -->
@@ -215,7 +225,7 @@ function linkClass(item: NavItem) {
             <span class="font-bold text-white">{{ usage.planLabel }}</span>
           </p>
           <div class="flex items-center justify-between mt-3 mb-2">
-            <span class="text-xs font-medium text-white/60">Осталось генераций</span>
+            <span class="text-xs font-medium text-white/60">Кредит-токены</span>
             <span class="text-xs font-bold text-white tabular-nums">
               {{ usage.left.toLocaleString('ru-RU') }}
               <span class="text-white/40">/</span>
@@ -230,7 +240,7 @@ function linkClass(item: NavItem) {
             />
           </div>
           <p v-if="usageStore.isLow" class="text-[11px] text-red-300 mt-2">
-            Генерации почти закончились
+            Токены почти закончились
           </p>
         </template>
 
