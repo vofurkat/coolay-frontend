@@ -70,6 +70,8 @@ export interface Template {
   references: TemplateReference[]
   slotHints: Record<string, string>
   usageCount: number
+  /** Системный шаблон платформы: виден всем клиентам, read-only. */
+  isSystem?: boolean
   createdAt: string
   updatedAt: string
   createdBy: string | null
@@ -281,5 +283,227 @@ export const telegramApi = {
       '/api/telegram/miniapp/photos',
       { initData },
     )
+  },
+}
+
+/* ─────────────────────────── Авторизация клиентов ─────────────────────────── */
+
+export interface AuthAccount {
+  id: string
+  email: string
+  name: string
+  role: string
+  provider: string
+}
+
+export interface AuthClient {
+  id: string
+  name: string
+  plan: string
+  planLabel: string
+  status: string
+  credits: { limit: number; used: number; left: number; periodStart: string | null }
+}
+
+export interface AuthMe {
+  ok: true
+  account: AuthAccount
+  client: AuthClient
+  config: { googleClientId: string }
+}
+
+export const authApi = {
+  me() {
+    return get<AuthMe>('/api/auth/me')
+  },
+  register(data: { company: string; name: string; email: string; password: string }) {
+    return post<{ ok: true; account: AuthAccount; client: AuthClient }>('/api/auth/register', data)
+  },
+  login(email: string, password: string) {
+    return post<{ ok: true; account: AuthAccount; client: AuthClient }>('/api/auth/login', {
+      email,
+      password,
+    })
+  },
+  google(credential: string) {
+    return post<{ ok: true; account: AuthAccount; client: AuthClient }>('/api/auth/google', {
+      credential,
+    })
+  },
+  logout() {
+    return post<{ ok: true }>('/api/auth/logout')
+  },
+  /** googleClientId нужен на экране входа ещё ДО авторизации: /me отдаёт
+   *  config даже с 401, но request() превращает 401 в Fail — поэтому
+   *  отдельный «сырой» запрос. */
+  async loginConfig(): Promise<{ googleClientId: string }> {
+    try {
+      const resp = await fetch('/api/auth/me')
+      const json = await resp.json().catch(() => ({}))
+      return { googleClientId: json?.config?.googleClientId || '' }
+    } catch {
+      return { googleClientId: '' }
+    }
+  },
+}
+
+/* ─────────────────────────── Супер-админка (/sadmin) ─────────────────────────── */
+
+export interface SadminUser {
+  id: string
+  login: string
+  name: string
+  createdAt: string
+  lastLoginAt: string | null
+}
+
+export interface SadminClientRow {
+  id: string
+  name: string
+  email: string | null
+  plan: string
+  planLabel: string
+  status: string
+  credits: { limit: number; used: number; left: number; extra: number; periodStart: string | null }
+  accounts: number
+  employees: number
+  projects: number
+  templates: number
+  createdAt: string
+  lastActiveAt: string | null
+}
+
+export interface SadminPlan {
+  key: string
+  label: string
+  monthlyCredits: number
+  price: number
+  currency: string
+  description: string
+  updatedAt: string
+  clients?: number
+}
+
+export interface SadminStats {
+  clients: number
+  clientsActive: number
+  clientsBlocked: number
+  clientsNew7d: number
+  accounts: number
+  byPlan: Record<string, number>
+  creditsUsed30d: number
+  generations30d: number
+  systemTemplates: number
+  admins: number
+}
+
+export interface UsageLogItem {
+  id: string
+  clientId: string
+  clientName?: string
+  accountId: string | null
+  tool: string
+  credits: number
+  source: string
+  at: string
+}
+
+export interface SadminLogItem {
+  id: string
+  adminId: string
+  adminLogin: string
+  action: string
+  target: string | null
+  details: string | null
+  at: string
+}
+
+export const sadminApi = {
+  login(login: string, password: string) {
+    return post<{ ok: true; admin: SadminUser }>('/api/sadmin/auth/login', { login, password })
+  },
+  logout() {
+    return post<{ ok: true }>('/api/sadmin/auth/logout')
+  },
+  me() {
+    return get<{ ok: true; admin: SadminUser }>('/api/sadmin/auth/me')
+  },
+  stats() {
+    return get<{
+      ok: true
+      stats: SadminStats
+      recentClients: SadminClientRow[]
+      recentUsage: UsageLogItem[]
+    }>('/api/sadmin/stats')
+  },
+  clients(q = '') {
+    return get<{ ok: true; clients: SadminClientRow[] }>(
+      `/api/sadmin/clients${q ? `?q=${encodeURIComponent(q)}` : ''}`,
+    )
+  },
+  client(id: string) {
+    return get<{
+      ok: true
+      client: SadminClientRow
+      accounts: Array<{ id: string; email: string; name: string; role: string; provider: string; createdAt: string }>
+      usage: UsageLogItem[]
+      plans: SadminPlan[]
+    }>(`/api/sadmin/clients/${id}`)
+  },
+  updateClient(id: string, data: { plan?: string; status?: string; name?: string }) {
+    return patch<{ ok: true; client: SadminClientRow }>(`/api/sadmin/clients/${id}`, data)
+  },
+  addCredits(id: string, amount: number, comment = '') {
+    return post<{ ok: true; client: SadminClientRow }>(`/api/sadmin/clients/${id}/credits`, {
+      amount,
+      comment,
+    })
+  },
+  usage(clientId = '', limit = 100) {
+    const params = new URLSearchParams()
+    if (clientId) params.set('clientId', clientId)
+    params.set('limit', String(limit))
+    return get<{ ok: true; usage: UsageLogItem[]; total: number }>(`/api/sadmin/usage?${params}`)
+  },
+  plans() {
+    return get<{ ok: true; plans: SadminPlan[] }>('/api/sadmin/plans')
+  },
+  createPlan(data: Partial<SadminPlan>) {
+    return post<{ ok: true; plan: SadminPlan }>('/api/sadmin/plans', data)
+  },
+  updatePlan(key: string, data: Partial<SadminPlan>) {
+    return patch<{ ok: true; plan: SadminPlan }>(`/api/sadmin/plans/${key}`, data)
+  },
+  deletePlan(key: string) {
+    return del<{ ok: true }>(`/api/sadmin/plans/${key}`)
+  },
+  templates() {
+    return get<{ ok: true; templates: Template[]; categories: CategoryNode[] }>(
+      '/api/sadmin/templates',
+    )
+  },
+  createTemplate(data: unknown) {
+    return post<{ ok: true; template: Template }>('/api/sadmin/templates', data)
+  },
+  updateTemplate(id: string, data: unknown) {
+    return patch<{ ok: true; template: Template }>(`/api/sadmin/templates/${id}`, data)
+  },
+  deleteTemplate(id: string) {
+    return del<{ ok: true }>(`/api/sadmin/templates/${id}`)
+  },
+  admins() {
+    return get<{ ok: true; admins: SadminUser[]; meId: string }>('/api/sadmin/admins')
+  },
+  createAdmin(data: { login: string; name: string; password: string }) {
+    return post<{ ok: true; admin: SadminUser }>('/api/sadmin/admins', data)
+  },
+  updateAdmin(id: string, data: { name?: string; password?: string }) {
+    return patch<{ ok: true; admin: SadminUser }>(`/api/sadmin/admins/${id}`, data)
+  },
+  deleteAdmin(id: string) {
+    return del<{ ok: true }>(`/api/sadmin/admins/${id}`)
+  },
+  log(limit = 100) {
+    return get<{ ok: true; log: SadminLogItem[]; total: number }>(`/api/sadmin/log?limit=${limit}`)
   },
 }

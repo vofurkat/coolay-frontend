@@ -160,6 +160,69 @@ const router = createRouter({
         },
       ],
     },
+    // Супер-админка платформы — отдельный контур авторизации (cookie админа),
+    // клиентский гард её не касается (meta.sadmin).
+    {
+      path: '/sadmin/login',
+      name: 'sadmin-login',
+      component: () => import('@/views/sadmin/SadminLoginView.vue'),
+      meta: { public: true, sadmin: true, title: 'Вход в админку' },
+    },
+    {
+      path: '/sadmin',
+      component: () => import('@/layouts/SadminLayout.vue'),
+      meta: { sadmin: true },
+      children: [
+        {
+          path: '',
+          name: 'sadmin-dashboard',
+          component: () => import('@/views/sadmin/SadminDashboardView.vue'),
+          meta: { sadmin: true, title: 'Админка · Обзор' },
+        },
+        {
+          path: 'clients',
+          name: 'sadmin-clients',
+          component: () => import('@/views/sadmin/SadminClientsView.vue'),
+          meta: { sadmin: true, title: 'Админка · Клиенты' },
+        },
+        {
+          path: 'clients/:id',
+          name: 'sadmin-client',
+          component: () => import('@/views/sadmin/SadminClientDetailView.vue'),
+          meta: { sadmin: true, title: 'Админка · Клиент' },
+        },
+        {
+          path: 'plans',
+          name: 'sadmin-plans',
+          component: () => import('@/views/sadmin/SadminPlansView.vue'),
+          meta: { sadmin: true, title: 'Админка · Тарифы' },
+        },
+        {
+          path: 'usage',
+          name: 'sadmin-usage',
+          component: () => import('@/views/sadmin/SadminUsageView.vue'),
+          meta: { sadmin: true, title: 'Админка · Списания' },
+        },
+        {
+          path: 'templates',
+          name: 'sadmin-templates',
+          component: () => import('@/views/sadmin/SadminTemplatesView.vue'),
+          meta: { sadmin: true, title: 'Админка · Системные шаблоны' },
+        },
+        {
+          path: 'admins',
+          name: 'sadmin-admins',
+          component: () => import('@/views/sadmin/SadminAdminsView.vue'),
+          meta: { sadmin: true, title: 'Админка · Администраторы' },
+        },
+        {
+          path: 'log',
+          name: 'sadmin-log',
+          component: () => import('@/views/sadmin/SadminLogView.vue'),
+          meta: { sadmin: true, title: 'Админка · Журнал' },
+        },
+      ],
+    },
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],
   scrollBehavior() {
@@ -167,9 +230,19 @@ const router = createRouter({
   },
 })
 
-router.beforeEach((to) => {
+router.beforeEach(async (to) => {
+  // Админка живёт на своём контуре: проверку сессии делает SadminLayout
+  // (свой cookie, свой /api/sadmin/auth/me) — клиентский гард её пропускает.
+  if (to.meta.sadmin) {
+    document.title = to.meta.title ? `${to.meta.title} · Coolay` : 'Coolay Admin'
+    return
+  }
+
   const auth = useAuthStore()
-  if (!auth.isAuthenticated) auth.restore()
+  // Сессия в httpOnly cookie — узнать о ней можно только запросом к серверу.
+  // Ждём первую проверку, иначе залогиненного пользователя при F5
+  // выкинет на /login до того, как ответит /api/auth/me.
+  if (!auth.checked) await auth.restore()
 
   if (!to.meta.public && !auth.isAuthenticated) {
     return { name: 'login', query: { redirect: to.fullPath } }
