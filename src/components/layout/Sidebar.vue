@@ -8,7 +8,6 @@ import {
   History,
   House,
   LayoutGrid,
-  Users,
   WandSparkles,
 } from '@lucide/vue'
 import Logo from '@/components/ui/Logo.vue'
@@ -89,12 +88,10 @@ const sections: NavSection[] = [
     label: 'Проекты',
     items: [
       { name: 'projects', label: 'Мои проекты', icon: Folder, to: '/projects', exact: true },
-      {
-        name: 'projects-shared',
-        label: 'Общие со мной',
-        icon: Users,
-        to: '/projects/shared',
-      },
+      // «Общие со мной» скрыт по запросу заказчика (13.08.2026) — маршрут
+      // добавлен в HIDDEN_PATHS в router/index.ts. Возврат: раскомментировать
+      // здесь и убрать путь оттуда.
+      // { name: 'projects-shared', label: 'Общие со мной', icon: Users, to: '/projects/shared' },
     ],
   },
 ]
@@ -194,9 +191,16 @@ function iconClass(item: NavItem) {
               :class="iconClass(item)"
             />
             <span v-if="!collapsed" class="truncate flex-1">{{ item.label }}</span>
+            <!-- На активном (лаймовом) фоне и при hover лаймовый бейдж сливается,
+                 поэтому он инвертируется: тёмный фон, белый текст. -->
             <span
-              v-if="!collapsed && item.badge && !isActive(item)"
-              class="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-accent text-ink-900 leading-none"
+              v-if="!collapsed && item.badge"
+              class="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-md leading-none transition-colors"
+              :class="
+                isActive(item)
+                  ? 'bg-ink-900 text-white'
+                  : 'bg-accent text-ink-900 group-hover:bg-ink-900 group-hover:text-white'
+              "
             >
               {{ item.badge }}
             </span>

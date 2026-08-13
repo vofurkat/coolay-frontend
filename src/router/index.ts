@@ -21,6 +21,7 @@ const HIDDEN_PATHS = [
   '/studios/marketplaces',
   '/batch',
   '/media',
+  '/projects/shared',
 ]
 
 function isHidden(path: string) {

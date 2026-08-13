@@ -14,6 +14,7 @@ import {
 import { useRouter } from 'vue-router'
 import CategoryTree from '@/components/templates/CategoryTree.vue'
 import TemplateEditor from '@/components/templates/TemplateEditor.vue'
+import PageHeader from '@/components/ui/PageHeader.vue'
 import {
   isFail,
   templatesApi,
@@ -144,20 +145,20 @@ const isFiltered = computed(() => selected.value.length > 0 || !!query.value)
 </script>
 
 <template>
-  <div class="page animate-fade-in">
-    <header class="flex flex-wrap items-start gap-4 mb-6">
-      <div class="min-w-0">
-        <h1 class="text-xl sm:text-2xl font-bold text-ink-900">Шаблоны</h1>
-        <p class="text-sm text-ink-500 mt-1">
-          Референсы и промты по категориям товара. Шаблон подставляется при
-          генерации вместо стандартных фото карточки.
-        </p>
-      </div>
-      <button type="button" class="btn btn-brand h-10 ml-auto shrink-0" @click="openCreate">
-        <Plus :size="16" :stroke-width="2" />
-        Новый шаблон
-      </button>
-    </header>
+  <div class="page space-y-6 animate-fade-in">
+    <!-- Единый заголовок страницы (как на /tools, /projects и т.д.):
+         PageHeader ставит заголовок и кнопку в одну линию. -->
+    <PageHeader
+      title="Шаблоны"
+      subtitle="Референсы и промты по категориям товара. Шаблон подставляется при генерации вместо стандартных фото карточки."
+    >
+      <template #actions>
+        <button type="button" class="btn btn-brand h-10 shrink-0" @click="openCreate">
+          <Plus :size="16" :stroke-width="2" />
+          Новый шаблон
+        </button>
+      </template>
+    </PageHeader>
 
     <div class="grid lg:grid-cols-[260px_1fr] gap-5">
       <!-- Категории -->
