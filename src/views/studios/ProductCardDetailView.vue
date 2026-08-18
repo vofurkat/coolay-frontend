@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Icon from '@/components/ui/Icon.vue'
 import ReadinessRing from '@/components/sku/ReadinessRing.vue'
@@ -38,6 +38,7 @@ const activeImage = ref(0)
 const editing = ref<'' | 'name' | 'short' | 'full' | 'advantages'>('')
 const editBuffer = ref('')
 const notFound = ref(false)
+const lightboxIndex = ref<number | null>(null)
 
 const card = computed<SkuCard | null>(() => store.getCard(String(route.params.id)))
 
@@ -246,11 +247,95 @@ async function copy(text: string) {
   }
 }
 
+function openLightbox(index: number) {
+  if (!gallery.value[index]) return
+  lightboxIndex.value = index
+}
+
+function closeLightbox() {
+  lightboxIndex.value = null
+}
+
+function lightboxPrev() {
+  const n = gallery.value.length
+  if (!n || lightboxIndex.value === null) return
+  lightboxIndex.value = (lightboxIndex.value - 1 + n) % n
+}
+
+function lightboxNext() {
+  const n = gallery.value.length
+  if (!n || lightboxIndex.value === null) return
+  lightboxIndex.value = (lightboxIndex.value + 1) % n
+}
+
+const lightboxItem = computed(() =>
+  lightboxIndex.value === null ? null : gallery.value[lightboxIndex.value] || null,
+)
+
+function onLightboxKey(e: KeyboardEvent) {
+  if (lightboxIndex.value === null) return
+  if (e.key === 'Escape') closeLightbox()
+  else if (e.key === 'ArrowLeft') lightboxPrev()
+  else if (e.key === 'ArrowRight') lightboxNext()
+}
+
+watch(lightboxIndex, (idx, prev) => {
+  if (idx !== null && prev === null) window.addEventListener('keydown', onLightboxKey)
+  if (idx === null && prev !== null) window.removeEventListener('keydown', onLightboxKey)
+})
+
+onBeforeUnmount(() => window.removeEventListener('keydown', onLightboxKey))
+
+function fileNameFromUrl(url: string, fallback: string) {
+  try {
+    const name = decodeURIComponent(new URL(url).pathname.split('/').pop() || '')
+    if (name && name.includes('.')) return name
+  } catch {
+    /* ignore */
+  }
+  const ext = url.match(/\.(jpe?g|png|webp|gif)(?:$|\?)/i)?.[1] || 'jpg'
+  return `${fallback}.${ext}`
+}
+
+async function downloadImage(url: string, name: string) {
+  try {
+    const resp = await fetch(url, { mode: 'cors' })
+    if (!resp.ok) throw new Error('fetch failed')
+    const blob = await resp.blob()
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = name
+    a.click()
+    URL.revokeObjectURL(a.href)
+  } catch {
+    const a = document.createElement('a')
+    a.href = url
+    a.download = name
+    a.rel = 'noopener'
+    a.click()
+  }
+}
+
 function downloadAllImages() {
   gallery.value.forEach((g, i) => {
-    setTimeout(() => window.open(g.url, '_blank'), i * 250)
+    const name = fileNameFromUrl(g.url, SLOT_TITLE[g.slot] || `image-${i + 1}`)
+    setTimeout(() => downloadImage(g.url, name), i * 250)
   })
 }
+
+const creditRows = computed(() => {
+  const c = card.value
+  if (!c) return []
+  const b = c.creditBreakdown
+  if (b && (b.analysis || b.content || b.images)) {
+    return [
+      { label: 'Анализ фото', value: b.analysis },
+      { label: 'Генерация контента', value: b.content },
+      { label: 'Генерация изображений', value: b.images },
+    ].filter((r) => r.value > 0)
+  }
+  return c.credits > 0 ? [{ label: 'AI-генерация карточки', value: c.credits }] : []
+})
 
 function removeCard() {
   const c = card.value
@@ -385,7 +470,12 @@ function removeCard() {
           <div class="card p-4 grid grid-cols-1 md:grid-cols-[260px_1fr] gap-5">
             <!-- Галерея -->
             <div>
-              <div class="aspect-[3/4] rounded-xl bg-ink-50 overflow-hidden grid place-items-center">
+              <button
+                type="button"
+                class="aspect-[3/4] w-full rounded-xl bg-ink-50 overflow-hidden grid place-items-center"
+                :disabled="!gallery[activeImage]"
+                @click="openLightbox(activeImage)"
+              >
                 <img
                   v-if="gallery[activeImage]"
                   :src="gallery[activeImage].url"
@@ -393,7 +483,7 @@ function removeCard() {
                   class="w-full h-full object-contain"
                 />
                 <Icon v-else name="image" :size="28" class="text-ink-300" />
-              </div>
+              </button>
               <div v-if="gallery.length > 1" class="flex items-center gap-1.5 mt-2 overflow-x-auto pb-1">
                 <button
                   v-for="(g, i) in gallery.slice(0, 5)"
@@ -697,24 +787,23 @@ function removeCard() {
             </div>
             <div v-if="gallery.length" class="grid grid-cols-2 sm:grid-cols-3 gap-3">
               <figure
-                v-for="g in gallery"
+                v-for="(g, i) in gallery"
                 :key="g.url"
                 class="rounded-xl border border-ink-100 overflow-hidden group"
               >
                 <div class="relative aspect-square bg-ink-50">
                   <img :src="g.url" :alt="SLOT_TITLE[g.slot]" class="w-full h-full object-contain" />
-                  <a
-                    :href="g.url"
-                    target="_blank"
-                    rel="noopener"
+                  <button
+                    type="button"
                     class="absolute inset-0 bg-ink-900/50 opacity-0 group-hover:opacity-100 transition grid place-items-center"
+                    @click="openLightbox(i)"
                   >
                     <span
                       class="px-3 h-8 rounded-lg bg-white text-ink-900 text-[11px] font-bold inline-flex items-center gap-1.5"
                     >
                       <Icon name="expand" :size="12" /> Открыть
                     </span>
-                  </a>
+                  </button>
                 </div>
                 <figcaption class="px-2.5 py-2 text-[11px] font-semibold text-ink-600">
                   {{ SLOT_TITLE[g.slot] || g.slot }}
@@ -996,6 +1085,23 @@ function removeCard() {
               <dd class="font-semibold text-ink-800">{{ card.credits }}</dd>
             </div>
           </dl>
+          <ul v-if="creditRows.length" class="mt-3 pt-3 border-t border-ink-100 space-y-1.5">
+            <li
+              v-for="row in creditRows"
+              :key="row.label"
+              class="flex items-center justify-between text-[11px]"
+            >
+              <span class="text-ink-400">{{ row.label }}</span>
+              <span class="font-bold text-ink-800 tabular-nums">−{{ row.value }}</span>
+            </li>
+          </ul>
+          <RouterLink
+            to="/usage"
+            class="mt-3 inline-flex items-center gap-1 text-[11px] font-bold text-brand-600 hover:text-brand-800"
+          >
+            Журнал списаний
+            <Icon name="arrowRight" :size="12" />
+          </RouterLink>
         </div>
 
         <!-- Готовность -->
@@ -1188,5 +1294,65 @@ function removeCard() {
         </ol>
       </div>
     </div>
+
+    <!-- Лайтбокс: оригинал в модалке, без новой вкладки -->
+    <Teleport to="body">
+      <div
+        v-if="lightboxItem"
+        class="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4 sm:p-8"
+        @click.self="closeLightbox"
+      >
+        <button
+          type="button"
+          class="absolute top-4 right-4 grid place-items-center w-11 h-11 rounded-xl bg-white/10 text-white hover:bg-white/20 transition"
+          aria-label="Закрыть"
+          @click="closeLightbox"
+        >
+          <Icon name="x" :size="22" />
+        </button>
+        <button
+          v-if="gallery.length > 1"
+          type="button"
+          class="absolute left-3 sm:left-6 grid place-items-center w-11 h-11 rounded-xl bg-white/10 text-white hover:bg-white/20 transition"
+          aria-label="Предыдущее"
+          @click="lightboxPrev"
+        >
+          <Icon name="chevronLeft" :size="22" />
+        </button>
+        <button
+          v-if="gallery.length > 1"
+          type="button"
+          class="absolute right-3 sm:right-6 grid place-items-center w-11 h-11 rounded-xl bg-white/10 text-white hover:bg-white/20 transition"
+          aria-label="Следующее"
+          @click="lightboxNext"
+        >
+          <Icon name="chevronRight" :size="22" />
+        </button>
+        <div class="max-w-6xl w-full flex flex-col items-center" @click.stop>
+          <img
+            :src="lightboxItem.url"
+            :alt="SLOT_TITLE[lightboxItem.slot] || lightboxItem.slot"
+            class="max-h-[82vh] w-auto max-w-full object-contain rounded-2xl shadow-2xl bg-black/20"
+          />
+          <div class="mt-4 flex flex-wrap items-center justify-center gap-3 text-white">
+            <span class="font-bold">{{ SLOT_TITLE[lightboxItem.slot] || lightboxItem.slot }}</span>
+            <span class="opacity-40">·</span>
+            <span class="text-sm opacity-70">{{ (lightboxIndex ?? 0) + 1 }} / {{ gallery.length }}</span>
+            <button
+              type="button"
+              class="h-8 px-3 rounded-lg bg-white text-ink-900 text-[11px] font-bold inline-flex items-center gap-1.5"
+              @click="
+                downloadImage(
+                  lightboxItem.url,
+                  fileNameFromUrl(lightboxItem.url, SLOT_TITLE[lightboxItem.slot] || 'image'),
+                )
+              "
+            >
+              <Icon name="download" :size="12" /> Скачать
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>

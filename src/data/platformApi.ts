@@ -246,6 +246,11 @@ export const teamApi = {
   usage() {
     return get<{ ok: true; usage: UsageState }>('/api/team/usage')
   },
+  usageLog(limit = 200) {
+    return get<{ ok: true; usage: UsageLogItem[]; total: number }>(
+      `/api/team/usage/log?limit=${limit}`,
+    )
+  },
   setPlan(plan: string) {
     return post<{ ok: true; usage: UsageState }>('/api/team/usage/plan', { plan })
   },
@@ -405,7 +410,22 @@ export interface UsageLogItem {
   tool: string
   credits: number
   source: string
+  meta?: Record<string, unknown> | null
   at: string
+}
+
+/** Человекочитаемые названия операций в журнале списаний. */
+export const USAGE_TOOL_LABELS: Record<string, string> = {
+  'sku:analyze': 'Анализ фото',
+  'sku:content': 'Генерация контента',
+  'sku:images': 'Генерация изображений',
+  generate: 'Генерация изображения',
+  'generate-smart': 'Умная генерация',
+  generation: 'Генерация',
+}
+
+export function usageToolLabel(tool: string) {
+  return USAGE_TOOL_LABELS[tool] || tool
 }
 
 export interface SadminLogItem {

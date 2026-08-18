@@ -226,10 +226,18 @@ export const useProductCardsStore = defineStore('productCards', () => {
     persistDraft()
   }
 
-  /** Есть ли незавершённый мастер, к которому можно вернуться */
-  const hasDraft = computed(
-    () => draft.value.step > 1 && !!(draft.value.sourceImage || draft.value.localPreview),
-  )
+  /**
+   * Есть ли незавершённый мастер, к которому можно вернуться.
+   * Сохранённая карточка (шаг 5 / savedCardId) — уже готовый результат,
+   * а не черновик: иначе лендинг студии вечно показывает
+   * «Есть незавершённая карточка · Шаг 5 из 5».
+   */
+  const hasDraft = computed(() => {
+    const d = draft.value
+    if (d.savedCardId) return false
+    if (d.step >= 5) return false
+    return d.step > 1 && !!(d.sourceImage || d.localPreview)
+  })
 
   const recentCards = computed(() => cards.value.slice(0, 12))
 
@@ -261,6 +269,11 @@ export const useProductCardsStore = defineStore('productCards', () => {
       tone: d.tone,
       credits:
         Math.round((d.analysisCredits + d.contentCredits + d.imageCredits) * 100) / 100,
+      creditBreakdown: {
+        analysis: d.analysisCredits || 0,
+        content: d.contentCredits || 0,
+        images: d.imageCredits || 0,
+      },
       channels: defaultChannels(),
       versions: [
         {

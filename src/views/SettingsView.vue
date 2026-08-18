@@ -266,6 +266,13 @@ function fmt(iso?: string) {
         </div>
         <button class="btn btn-dark btn-md">Изменить тариф</button>
       </div>
+      <RouterLink to="/usage" class="card p-5 flex items-center justify-between gap-3 hover:border-ink-200">
+        <div>
+          <p class="text-sm font-bold text-ink-900">Журнал списаний</p>
+          <p class="text-xs text-ink-400 mt-0.5">Сколько кредит-токенов ушло и на какую операцию</p>
+        </div>
+        <Icon name="arrowRight" :size="16" class="text-ink-400" />
+      </RouterLink>
     </div>
 
     <!-- Add / edit modal -->

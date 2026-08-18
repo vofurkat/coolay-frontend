@@ -146,6 +146,12 @@ export interface SkuCard {
 
   tone: string
   credits: number
+  /** Списание по операциям мастера — для журнала на карточке. */
+  creditBreakdown?: {
+    analysis: number
+    content: number
+    images: number
+  }
 
   channels: SkuChannel[]
   versions: SkuVersion[]

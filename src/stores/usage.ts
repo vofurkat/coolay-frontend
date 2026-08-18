@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
-import { isFail, teamApi, type UsageState } from '@/data/platformApi'
+import { isFail, teamApi, type UsageLogItem, type UsageState } from '@/data/platformApi'
 
 /**
  * Остаток генераций и текущий план.
@@ -13,6 +13,10 @@ export const useUsageStore = defineStore('usage', () => {
   const usage = ref<UsageState | null>(null)
   const loading = ref(false)
   const error = ref('')
+  const log = ref<UsageLogItem[]>([])
+  const logTotal = ref(0)
+  const logLoading = ref(false)
+  const logError = ref('')
 
   /**
    * Доля ОСТАТКА, а не расхода: полоса заполнена, пока квота есть, и пустеет
@@ -51,5 +55,33 @@ export const useUsageStore = defineStore('usage', () => {
     return true
   }
 
-  return { usage, loading, error, leftPercent, isLow, load, setPlan }
+  async function loadLog(force = false) {
+    if (logLoading.value) return
+    if (log.value.length && !force) return
+    logLoading.value = true
+    logError.value = ''
+    const res = await teamApi.usageLog(200)
+    logLoading.value = false
+    if (isFail(res)) {
+      logError.value = res.error
+      return
+    }
+    log.value = res.usage
+    logTotal.value = res.total
+  }
+
+  return {
+    usage,
+    loading,
+    error,
+    leftPercent,
+    isLow,
+    load,
+    setPlan,
+    log,
+    logTotal,
+    logLoading,
+    logError,
+    loadLog,
+  }
 })

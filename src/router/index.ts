@@ -148,6 +148,16 @@ const router = createRouter({
           meta: { title: 'История' },
         },
         {
+          path: 'usage',
+          name: 'usage',
+          component: () => import('@/views/UsageLogView.vue'),
+          meta: {
+            title: 'Журнал списаний',
+            description: 'История трат кредит-токенов по операциям.',
+            icon: 'bolt',
+          },
+        },
+        {
           path: 'integrations',
           name: 'integrations',
           component: () => import('@/views/IntegrationsView.vue'),

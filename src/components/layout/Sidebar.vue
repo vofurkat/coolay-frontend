@@ -8,6 +8,7 @@ import {
   History,
   House,
   LayoutGrid,
+  Receipt,
   WandSparkles,
 } from '@lucide/vue'
 import Logo from '@/components/ui/Logo.vue'
@@ -92,6 +93,18 @@ const sections: NavSection[] = [
       // добавлен в HIDDEN_PATHS в router/index.ts. Возврат: раскомментировать
       // здесь и убрать путь оттуда.
       // { name: 'projects-shared', label: 'Общие со мной', icon: Users, to: '/projects/shared' },
+    ],
+  },
+  {
+    key: 'account',
+    label: 'Аккаунт',
+    items: [
+      {
+        name: 'usage',
+        label: 'Журнал списаний',
+        icon: Receipt,
+        to: '/usage',
+      },
     ],
   },
 ]
@@ -246,6 +259,12 @@ function iconClass(item: NavItem) {
           <p v-if="usageStore.isLow" class="text-[11px] text-red-300 mt-2">
             Токены почти закончились
           </p>
+          <RouterLink
+            to="/usage"
+            class="mt-2.5 inline-flex text-[11px] font-semibold text-white/50 hover:text-accent"
+          >
+            Журнал списаний →
+          </RouterLink>
         </template>
 
         <p v-else class="text-xs text-white/40">Не удалось загрузить лимит</p>
