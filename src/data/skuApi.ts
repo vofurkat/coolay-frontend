@@ -88,6 +88,8 @@ export function createImages(params: {
   productPrompt: string
   slots: SkuSlotId[]
   settings: SkuImageSettings
+  /** Пол из анализа — чтобы слоты «на модели» не рисовали не ту аудиторию. */
+  gender?: string
   /** Шаблон: его референсы заменяют стандартные фото карточки. */
   templateId?: string
 }) {

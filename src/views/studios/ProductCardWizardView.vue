@@ -11,8 +11,16 @@ import ReadinessRing from '@/components/sku/ReadinessRing.vue'
 import { DEFAULT_SLOTS, SLOT_DEFS, computeReadiness, useProductCardsStore } from '@/stores/productCards'
 import { useAuthStore } from '@/stores/auth'
 import { analyzePhoto, createImages, generateContent, pollTasks } from '@/data/skuApi'
-import { LANG_LABEL, LANG_LIST } from '@/types/sku'
-import type { LangCode, SkuImage, SkuSlotId } from '@/types/sku'
+import {
+  GENDER_OPTIONS,
+  LANG_LABEL,
+  LANG_LIST,
+  normalizeGender,
+  rewriteGenderedCategory,
+  rewriteGenderedText,
+  rewriteImagePromptGender,
+} from '@/types/sku'
+import type { LangCode, SkuGender, SkuImage, SkuSlotId } from '@/types/sku'
 import { isFail, templatesApi, type Template } from '@/data/platformApi'
 
 const router = useRouter()
@@ -92,7 +100,6 @@ const analysisFields = computed(() => {
     { label: 'Категория', value: a.category, icon: 'folder' },
     { label: 'Цвет', value: a.color, icon: 'palette' },
     { label: 'Материал', value: a.material, icon: 'layers' },
-    { label: 'Пол', value: a.gender, icon: 'users' },
     { label: 'Сезон', value: a.season, icon: 'globe' },
     { label: 'Тип товара', value: a.productType, icon: 'shirt' },
     { label: 'Стиль', value: a.style, icon: 'chart' },
@@ -116,6 +123,23 @@ const attrGrid = computed(() => {
     { label: 'Крой', value: a.cut },
   ].filter((f) => f.value && f.value !== '—')
 })
+
+/**
+ * Пользователь поправляет пол на шаге анализа — иначе модель
+ * уводит контент и фото «на модели» в другую аудиторию.
+ */
+function setGender(next: SkuGender) {
+  const a = d.value.analysis
+  if (!a || a.gender === next) return
+  a.gender = next
+  a.title = rewriteGenderedText(a.title, next)
+  a.subtitle = rewriteGenderedText(a.subtitle, next)
+  a.category = rewriteGenderedCategory(a.category, next)
+  a.imagePrompt = rewriteImagePromptGender(a.imagePrompt, next)
+  store.persistDraft()
+}
+
+const selectedGender = computed(() => normalizeGender(d.value.analysis?.gender || ''))
 
 /* ─────────── Шаг 3: контент ─────────── */
 const tones = ['Нейтральный', 'Продающий', 'Премиальный', 'Маркетплейсный', 'Лаконичный']
@@ -276,6 +300,7 @@ async function runImages() {
     productPrompt: d.value.analysis.imagePrompt,
     slots,
     settings: d.value.imageSettings,
+    gender: d.value.analysis.gender,
     templateId: selectedTemplateId.value || undefined,
   })
   // Счётчик применений — не блокирует генерацию, поэтому без await и без
@@ -350,6 +375,7 @@ async function retrySlot(id: SkuSlotId) {
     productPrompt: d.value.analysis.imagePrompt,
     slots: [id],
     settings: d.value.imageSettings,
+    gender: d.value.analysis.gender,
   })
   if (!res.ok) {
     error.value = res.error
@@ -583,6 +609,29 @@ function addExtraPhoto() {
             {{ d.analysis.title }}
           </h3>
           <p class="text-xs text-ink-400 mt-1">{{ d.analysis.subtitle }}</p>
+
+          <div class="mt-4 pt-3 border-t border-ink-100">
+            <p class="text-[10px] uppercase tracking-wide text-ink-400 font-semibold">Пол</p>
+            <p class="text-[11px] text-ink-400 mt-0.5 mb-2">
+              Поправьте, если AI ошибся — контент и фото на модели пойдут по этому выбору.
+            </p>
+            <div class="flex flex-wrap gap-1.5">
+              <button
+                v-for="opt in GENDER_OPTIONS"
+                :key="opt.value"
+                type="button"
+                class="h-8 px-3 rounded-lg text-[12px] font-bold border transition"
+                :class="
+                  selectedGender === opt.value
+                    ? 'bg-ink-900 text-white border-ink-900'
+                    : 'bg-white text-ink-700 border-ink-200 hover:border-ink-400'
+                "
+                @click="setGender(opt.value)"
+              >
+                {{ opt.label }}
+              </button>
+            </div>
+          </div>
 
           <ul class="mt-4 space-y-3">
             <li v-for="f in analysisFields" :key="f.label" class="flex items-start gap-2.5">

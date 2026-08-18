@@ -40,6 +40,77 @@ export interface SkuAnalysis {
   imagePrompt: string
 }
 
+/** Канонические значения пола — ими правит пользователь на шаге анализа. */
+export const GENDER_OPTIONS = [
+  { value: 'Мужской', label: 'Мужское' },
+  { value: 'Женский', label: 'Женское' },
+  { value: 'Унисекс', label: 'Унисекс' },
+  { value: 'Детский', label: 'Детское' },
+] as const
+
+export type SkuGender = (typeof GENDER_OPTIONS)[number]['value']
+
+const GENDER_ADJ: Record<SkuGender, { m: string; f: string; n: string; pl: string; cat: string; en: string }> = {
+  Мужской: { m: 'Мужской', f: 'Мужская', n: 'Мужское', pl: 'Мужские', cat: 'Мужское', en: "men's" },
+  Женский: { m: 'Женский', f: 'Женская', n: 'Женское', pl: 'Женские', cat: 'Женское', en: "women's" },
+  Детский: { m: 'Детский', f: 'Детская', n: 'Детское', pl: 'Детские', cat: 'Детское', en: "children's" },
+  Унисекс: { m: 'Унисекс', f: 'Унисекс', n: 'Унисекс', pl: 'Унисекс', cat: 'Унисекс', en: 'unisex' },
+}
+
+const GENDERED_WORD =
+  /женск(?:ий|ая|ое|ие)|мужск(?:ой|ая|ое|ие)|детск(?:ий|ая|ое|ие)/gi
+
+/** Свести ответ модели / подпись кнопки к каноническому значению. */
+export function normalizeGender(raw: string): SkuGender | '' {
+  const s = (raw || '').trim().toLowerCase()
+  if (!s || s === '—') return ''
+  if (/жен|woman|women|female/.test(s)) return 'Женский'
+  if (/дет|child|kid/.test(s)) return 'Детский'
+  if (/унисекс|unisex/.test(s)) return 'Унисекс'
+  if (/муж|man|men|male/.test(s)) return 'Мужской'
+  return ''
+}
+
+function adjFor(gender: SkuGender, form: 'm' | 'f' | 'n' | 'pl') {
+  return GENDER_ADJ[gender][form]
+}
+
+/** Заменить «мужская/женская/…» в названии и описании на выбранный пол. */
+export function rewriteGenderedText(text: string, gender: string): string {
+  const g = normalizeGender(gender)
+  if (!text || !g) return text
+  return text.replace(GENDERED_WORD, (m) => {
+    const low = m.toLowerCase()
+    const form: 'm' | 'f' | 'n' | 'pl' = /ая$/.test(low)
+      ? 'f'
+      : /ое$/.test(low)
+        ? 'n'
+        : /ие$/.test(low)
+          ? 'pl'
+          : 'm'
+    const next = adjFor(g, form)
+    return m[0] === m[0].toUpperCase() ? next : next.toLowerCase()
+  })
+}
+
+export function rewriteGenderedCategory(category: string, gender: string): string {
+  const g = normalizeGender(gender)
+  if (!category || !g) return category
+  return category.replace(/^(Мужское|Женское|Детское|Унисекс)/i, GENDER_ADJ[g].cat)
+}
+
+export function rewriteImagePromptGender(prompt: string, gender: string): string {
+  const g = normalizeGender(gender)
+  if (!g) return prompt || ''
+  let p = (prompt || '')
+    .replace(/\b(men'?s|women'?s|male|female|unisex|kids?'?s?|children'?s|boys?'?s?|girls?'?s?)\b/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+  const tag = GENDER_ADJ[g].en
+  if (p && !new RegExp(`\\b${tag.replace("'", "'?")}\\b`, 'i').test(p)) p = `${tag} ${p}`
+  return p || tag
+}
+
 export interface SkuSeo {
   title: string
   description: string
