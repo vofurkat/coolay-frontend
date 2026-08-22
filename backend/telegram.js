@@ -30,6 +30,9 @@ import { consumeCredits } from './plans.js'
 import { skuAnalyze, skuContent } from './sku.js'
 import { createSkuJob, getSkuJob } from './skujobs.js'
 import { buildCard } from './cards.js'
+// Проверка супер-админа берётся из sadmin.js, а не переписывается здесь:
+// обратной зависимости (sadmin → telegram) нет, цикла импортов не возникает.
+import { getAdmin } from './sadmin.js'
 
 const API = 'https://api.telegram.org'
 
@@ -413,6 +416,22 @@ export async function telegramRouter(req, res, { url, sendJson, readBody }) {
     sendJson(res, 200, { ok: true })
     handleUpdate(db, update).catch((e) => console.error('[telegram] ошибка обработки:', e.message))
     return true
+  }
+
+  /*
+   * status и setup — операции уровня платформы, а не клиента, поэтому обе
+   * закрыты сессией супер-админа. Без этого status отдавал бы наружу username
+   * бота и число сотрудников по ВСЕМ клиентам, а setup позволял бы любому
+   * переставить webhook на свой адрес и перехватывать обновления Telegram.
+   */
+  if (
+    (p === '/api/telegram/status' && req.method === 'GET') ||
+    (p === '/api/telegram/setup' && req.method === 'POST')
+  ) {
+    if (!getAdmin(req, db)) {
+      sendJson(res, 401, { ok: false, error: 'Требуются права администратора платформы' })
+      return true
+    }
   }
 
   if (p === '/api/telegram/status' && req.method === 'GET') {

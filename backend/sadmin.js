@@ -58,7 +58,14 @@ function adminCookie(token, maxAgeMs) {
     .join('; ')
 }
 
-function getAdmin(req, db) {
+/**
+ * Текущий супер-админ платформы по cookie, либо null.
+ * Экспортируется, потому что платформенными операциями занимается не только
+ * /api/sadmin/: подключение Telegram-бота (webhook, кнопка меню) — тоже
+ * настройка всей платформы, и повторять проверку сессии во втором месте
+ * означало бы рано или поздно разойтись с этой в правилах.
+ */
+export function getAdmin(req, db = load()) {
   const token = parseCookies(req)[ADMIN_COOKIE]
   if (!token) return null
   const session = db.sadminSessions.find((s) => s.token === token)
