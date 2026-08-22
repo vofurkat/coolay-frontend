@@ -19,7 +19,6 @@ const HIDDEN_PATHS = [
   '/studios/fashion',
   '/studios/catalog',
   '/studios/marketplaces',
-  '/batch',
   '/media',
   '/projects/shared',
 ]
@@ -88,6 +87,20 @@ const router = createRouter({
           name: 'studio-product-card',
           component: () => import('@/views/studios/ProductCardDetailView.vue'),
           meta: { title: 'Карточка товара', icon: 'card' },
+        },
+        // Пакетная генерация: до 10 разных товаров одним заданием.
+        // Раздел был в HIDDEN_PATHS как заглушка — открыт после появления
+        // настоящего оркестратора заданий (backend/skujobs.js).
+        {
+          path: 'batch',
+          name: 'batch',
+          component: () => import('@/views/BatchGenerateView.vue'),
+          meta: {
+            title: 'Пакетная генерация',
+            description:
+              'Загрузите до 10 разных товаров — карточки создаются одним заданием параллельно.',
+            icon: 'layers',
+          },
         },
         // Инструменты
         {

@@ -90,7 +90,20 @@ function withJobLock(jobId, fn) {
 function makeItem(input) {
   const slots = [...new Set((input.slots || []).filter((s) => IMAGE_SLOTS[s]))].slice(0, 7)
   const modelSlots = slots.filter((s) => MODEL_SLOTS.has(s))
-  const anchor = pickAnchor(modelSlots)
+
+  /*
+   * ГОТОВЫЙ ЯКОРЬ ИЗ КАРТОЧКИ.
+   * При повторной генерации одного ракурса модель уже известна: клиент
+   * присылает якорный кадр и паспорт из карточки. Без этого кнопка
+   * «Перегенерировать» снова выбрала бы якорем сам же запрошенный слот и
+   * привела бы другого человека — ровно та проблема, которую мы решаем.
+   */
+  const presetAnchor =
+    typeof input.anchorUrl === 'string' && /^https?:\/\//.test(input.anchorUrl)
+      ? input.anchorUrl
+      : ''
+  const anchor = presetAnchor ? null : pickAnchor(modelSlots)
+
   return {
     id: uid('item'),
     imageUrl: input.imageUrl,
@@ -103,8 +116,8 @@ function makeItem(input) {
     anchorSlot: anchor,
     /** Слоты, ожидающие готовности якоря. */
     waiting: modelSlots.filter((s) => s !== anchor),
-    anchorUrl: '',
-    modelPassport: null,
+    anchorUrl: presetAnchor,
+    modelPassport: presetAnchor && input.modelPassport ? input.modelPassport : null,
     /** slotId → { taskId, state, url, error, credits } */
     images: slots.map((slotId) => ({ slotId, taskId: null, state: 'queued' })),
     label: input.label || '',
@@ -182,6 +195,9 @@ async function startItem(item) {
     await launchSlot(item, slotId, plan)
     await new Promise((r) => setTimeout(r, 120)) // мягкий rate-limit
   }
+  // Якорь пришёл из карточки — ждать нечего, сразу пускаем вторую фазу:
+  // иначе повторная генерация простаивала бы до следующего опроса.
+  if (item.anchorUrl && item.waiting.length) await releaseWaiting(item)
 }
 
 /**

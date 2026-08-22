@@ -10,7 +10,17 @@ import WizardSteps from '@/components/sku/WizardSteps.vue'
 import ReadinessRing from '@/components/sku/ReadinessRing.vue'
 import { DEFAULT_SLOTS, SLOT_DEFS, computeReadiness, useProductCardsStore } from '@/stores/productCards'
 import { useAuthStore } from '@/stores/auth'
-import { analyzePhoto, createImages, generateContent, pollTasks } from '@/data/skuApi'
+import {
+  analyzePhoto,
+  createJob,
+  findSimilar,
+  generateContent,
+  imageHash,
+  readJob,
+  type SimilarMatch,
+  type SkuJob,
+} from '@/data/skuApi'
+import SimilarProductModal from '@/components/sku/SimilarProductModal.vue'
 import {
   GENDER_OPTIONS,
   LANG_LABEL,
@@ -49,7 +59,11 @@ onMounted(async () => {
   // Автозапуск анализа, если пользователь только что загрузил фото
   if (d.value.step === 2 && !d.value.analysis) await runAnalyze()
   // Возобновление опроса незавершённых задач генерации после перезагрузки
-  if (d.value.step === 4 && d.value.images.some((i) => i.state === 'processing')) startPolling()
+  // Возобновляем опрос по идентификатору задания: кадры мог ещё не поставить
+  // сервер (ждут якорную модель), поэтому проверять только 'processing' нельзя.
+  if (d.value.step === 4 && d.value.jobId && d.value.images.some((i) => i.state !== 'success')) {
+    startPolling()
+  }
 })
 
 onBeforeUnmount(stopPolling)
@@ -91,6 +105,49 @@ async function runAnalyze() {
   d.value.analysis = res.analysis
   d.value.analysisCredits = res.credits || 0
   store.persistDraft()
+  // Проверка на повтор идёт после анализа: только здесь есть и атрибуты
+  // товара, и само фото — два признака, по которым сервер ищет дубли.
+  void checkSimilar()
+}
+
+/* ─────────── Поиск уже созданных таких же товаров ─────────── */
+
+const similarMatches = ref<SimilarMatch[]>([])
+const similarThreshold = ref(90)
+const showSimilar = ref(false)
+/** Пользователь подтвердил, что создаёт ещё один такой же товар. */
+const similarDismissed = ref(false)
+
+const duplicateMatch = computed(
+  () => similarMatches.value.find((m) => m.similarity >= similarThreshold.value) || null,
+)
+
+async function checkSimilar() {
+  if (!d.value.analysis) return
+  // Хеш считается в браузере и кэшируется в черновике, чтобы не пересчитывать
+  // его при каждом возврате на шаг.
+  if (!d.value.imageHash) {
+    d.value.imageHash = await imageHash(d.value.localPreview || d.value.sourceImage)
+    store.persistDraft()
+  }
+  const res = await findSimilar({
+    analysis: d.value.analysis,
+    imageHash: d.value.imageHash || undefined,
+  })
+  // Подсказка, а не блокер: при сбое молча продолжаем работу.
+  if (!res.ok) return
+  similarMatches.value = res.matches
+  similarThreshold.value = res.threshold || 90
+  if (res.duplicate && !similarDismissed.value) showSimilar.value = true
+}
+
+function openExisting(id: string) {
+  router.push(`/studios/product-cards/${id}`)
+}
+
+function dismissSimilar() {
+  similarDismissed.value = true
+  showSimilar.value = false
 }
 
 const analysisFields = computed(() => {
@@ -295,7 +352,7 @@ async function runImages() {
   busyText.value = 'Ставим задачи на генерацию изображений…'
   goStep(4)
 
-  const res = await createImages({
+  const res = await createJob({
     imageUrl: d.value.sourceImage,
     productPrompt: d.value.analysis.imagePrompt,
     slots,
@@ -307,20 +364,45 @@ async function runImages() {
   // проверки результата: статистика не должна ломать основной сценарий.
   if (selectedTemplateId.value) void templatesApi.use(selectedTemplateId.value)
   busy.value = false
-
   if (!res.ok) {
     error.value = res.error
     return
   }
-
-  d.value.images = res.tasks.map((t) => ({
-    slotId: t.slotId,
-    taskId: t.taskId,
-    state: t.state === 'fail' ? 'fail' : 'processing',
-    error: t.error,
-  }))
-  store.persistDraft()
+  applyJob(res.job)
   startPolling()
+}
+
+/**
+ * Перенос состояния задания с сервера в черновик.
+ *
+ * Кадры теперь ставит сервер, а не браузер: сначала якорный кадр с моделью,
+ * затем остальные ракурсы — уже с этим кадром как референсом. Поэтому слот
+ * может быть в состоянии 'queued' (ждёт готовности якоря), чего в прежней
+ * схеме не было; для интерфейса это такое же ожидание, как 'processing'.
+ */
+function applyJob(job: SkuJob) {
+  const item = job.items[0]
+  if (!item) return
+  d.value.jobId = job.id
+  if (item.anchorUrl) d.value.anchorUrl = item.anchorUrl
+  if (item.modelPassport) d.value.modelPassport = item.modelPassport
+
+  let credits = 0
+  d.value.images = item.images.map((i) => {
+    credits += i.credits || 0
+    return {
+      slotId: i.slotId,
+      taskId: i.taskId,
+      state: i.state === 'fail' ? 'fail' : i.state === 'success' ? 'success' : 'processing',
+      url: i.url || undefined,
+      error: i.error || undefined,
+      credits: i.credits || 0,
+    }
+  })
+  // Сумму берём из ответа сервера, а не накапливаем на клиенте: при
+  // перезагрузке страницы накопленное значение удвоилось бы.
+  d.value.imageCredits = Math.round(credits * 100) / 100
+  store.persistDraft()
 }
 
 function startPolling() {
@@ -336,61 +418,68 @@ function stopPolling() {
   }
 }
 
+/**
+ * Опрос задания. Этот же запрос продвигает конвейер на сервере: именно по
+ * нему сервер замечает готовность якоря и запускает остальные ракурсы.
+ */
 async function tick() {
-  const ids = d.value.images
-    .filter((i) => i.state === 'processing' && i.taskId)
-    .map((i) => i.taskId as string)
-  if (!ids.length) {
+  const id = d.value.jobId
+  if (!id) {
     stopPolling()
     return
   }
-
-  const res = await pollTasks(ids)
-  if (!res.ok) return
-
-  let changed = false
-  for (const t of res.tasks) {
-    const img = d.value.images.find((i) => i.taskId === t.taskId)
-    if (!img || img.state !== 'processing') continue
-    if (t.state === 'success' && t.url) {
-      img.state = 'success'
-      img.url = t.url
-      img.credits = t.credits || 0
-      d.value.imageCredits += t.credits || 0
-      changed = true
-    } else if (t.state === 'fail') {
-      img.state = 'fail'
-      img.error = t.error || 'Не удалось создать изображение'
-      changed = true
+  const res = await readJob(id)
+  if (!res.ok) {
+    // Задание могло быть вытеснено из журнала (лимит на клиента) — тогда
+    // опрос бесконечен и бессмыслен, поэтому останавливаемся.
+    if (res.error && /не найдено/i.test(res.error)) {
+      stopPolling()
+      d.value.jobId = null
+      store.persistDraft()
     }
+    return
   }
-  if (changed) store.persistDraft()
-  if (!d.value.images.some((i) => i.state === 'processing')) stopPolling()
+  applyJob(res.job)
+  if (res.job.state === 'done') stopPolling()
 }
 
+/**
+ * Повторная генерация одного ракурса.
+ * Якорь и паспорт модели передаём из черновика — иначе сервер выбрал бы
+ * якорем сам же перегенерируемый кадр и подставил бы другого человека.
+ */
 async function retrySlot(id: SkuSlotId) {
   if (!d.value.analysis || !d.value.sourceImage) return
-  const res = await createImages({
+  error.value = ''
+  const res = await createJob({
     imageUrl: d.value.sourceImage,
     productPrompt: d.value.analysis.imagePrompt,
     slots: [id],
     settings: d.value.imageSettings,
     gender: d.value.analysis.gender,
+    templateId: selectedTemplateId.value || undefined,
+    anchorUrl: d.value.anchorUrl || undefined,
+    modelPassport: d.value.modelPassport || undefined,
   })
   if (!res.ok) {
     error.value = res.error
     return
   }
-  const t = res.tasks[0]
-  const i = d.value.images.findIndex((x) => x.slotId === id)
+  const item = res.job.items[0]
+  const rec = item?.images.find((x) => x.slotId === id)
+  if (!rec) return
   const next: SkuImage = {
     slotId: id,
-    taskId: t.taskId,
-    state: t.state === 'fail' ? 'fail' : 'processing',
-    error: t.error,
+    taskId: rec.taskId,
+    state: rec.state === 'fail' ? 'fail' : rec.state === 'success' ? 'success' : 'processing',
+    url: rec.url || undefined,
+    error: rec.error || undefined,
   }
+  const i = d.value.images.findIndex((x) => x.slotId === id)
   if (i === -1) d.value.images.push(next)
   else d.value.images.splice(i, 1, next)
+  // Перегенерация — отдельное задание, поэтому дальше опрашиваем именно его.
+  d.value.jobId = res.job.id
   store.persistDraft()
   startPolling()
 }
@@ -493,6 +582,15 @@ function addExtraPhoto() {
 <template>
   <div class="page space-y-5 animate-fade-in">
     <input ref="extraInput" type="file" accept="image/*" class="hidden" />
+
+    <!-- Предупреждение о повторе: не блокирует, а предлагает выбор -->
+    <SimilarProductModal
+      v-if="showSimilar && similarMatches.length"
+      :matches="similarMatches"
+      :threshold="similarThreshold"
+      @open="openExisting"
+      @dismiss="dismissSimilar"
+    />
 
     <!-- Навигация назад -->
     <button
@@ -1301,6 +1399,41 @@ function addExtraPhoto() {
                 :style="{ width: `${(imagesDone / imagesTotal) * 100}%` }"
               />
             </div>
+
+            <!--
+              Состояние якорной модели. Пользователю важно понимать, почему
+              часть кадров ещё не начата: сначала снимается эталонный кадр,
+              и только потом остальные ракурсы — с той же моделью.
+            -->
+            <div
+              v-if="d.modelPassport || d.anchorUrl"
+              class="mt-3 flex items-start gap-2 p-2.5 rounded-xl bg-emerald-50 border border-emerald-100"
+            >
+              <img
+                v-if="d.anchorUrl"
+                :src="d.anchorUrl"
+                alt="Эталонный кадр модели"
+                class="w-9 h-11 rounded-lg object-cover shrink-0"
+                loading="lazy"
+              />
+              <div class="min-w-0">
+                <p class="text-[11px] font-semibold text-emerald-800">Модель зафиксирована</p>
+                <p class="text-[11px] text-emerald-700 leading-snug mt-0.5">
+                  {{
+                    d.modelPassport?.model
+                      ? d.modelPassport.model
+                      : 'Остальные ракурсы снимаются с той же моделью.'
+                  }}
+                </p>
+              </div>
+            </div>
+            <p
+              v-else-if="imagesPending"
+              class="mt-3 text-[11px] text-ink-500 leading-snug"
+            >
+              Снимаем эталонный кадр модели — остальные ракурсы будут с тем же
+              человеком и в той же обуви.
+            </p>
           </div>
         </div>
 

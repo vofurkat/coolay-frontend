@@ -1,15 +1,45 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import Icon from '@/components/ui/Icon.vue'
-import {
-  dashboardStats,
-  homeScenarios,
-  homeProjects,
-  homeActivity,
-} from '@/data/mock'
+import { dashboardStats, homeScenarios, homeActivity } from '@/data/mock'
+import { useProductCardsStore } from '@/stores/productCards'
 
 const router = useRouter()
+const cardsStore = useProductCardsStore()
+
+/*
+ * «Недавние проекты» показывают РЕАЛЬНО созданные карточки вместо прежней
+ * заглушки: на демо-данных блок вводил в заблуждение — выглядел как история
+ * работы, но не менялся после генерации и вёл на общий список.
+ */
+onMounted(() => {
+  void cardsStore.restore()
+})
+
+/** Дата в человеческом виде: «сегодня», «вчера», иначе короткая дата. */
+function fmtWhen(iso: string) {
+  const t = Date.parse(iso)
+  if (!Number.isFinite(t)) return ''
+  const days = Math.floor((Date.now() - t) / 86400000)
+  if (days <= 0) return 'сегодня'
+  if (days === 1) return 'вчера'
+  if (days < 7) return `${days} дн. назад`
+  return new Date(t).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })
+}
+
+const recentProjects = computed(() =>
+  cardsStore.recentCards.slice(0, 4).map((c) => ({
+    id: c.id,
+    title: c.content?.ru?.name || c.analysis?.title || c.sku,
+    // Показываем готовый кадр, а не исходное фото: пользователь узнаёт
+    // карточку по результату генерации.
+    thumbnail: c.images?.find((i) => i.state === 'success' && i.url)?.url || c.sourceImage || '',
+    type: c.analysis?.productType || 'Карточка товара',
+    updatedAt: fmtWhen(c.updatedAt || c.createdAt),
+    to: `/studios/product-cards/${c.id}`,
+  })),
+)
 const assistantOpen = ref(false)
 
 const toneBg: Record<string, string> = {
@@ -140,15 +170,41 @@ function openAssistant() {
             Все проекты <Icon name="chevronRight" :size="16" />
           </RouterLink>
         </div>
-        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <!-- Пока нет ни одной карточки: ведём к созданию, а не показываем пустоту -->
+        <RouterLink
+          v-if="!recentProjects.length && !cardsStore.loading"
+          to="/studios/product-cards"
+          class="flex items-center gap-3 p-4 rounded-xl border border-dashed border-ink-200 hover:border-brand-400 hover:bg-brand-50/40 transition"
+        >
+          <div class="grid place-items-center w-10 h-10 rounded-xl bg-brand-50 text-brand-600 shrink-0">
+            <Icon name="sparkles" :size="18" />
+          </div>
+          <div class="min-w-0">
+            <div class="font-bold text-ink-900 text-sm">Здесь появятся ваши карточки</div>
+            <div class="text-xs text-ink-500 mt-0.5">
+              Загрузите фото товара — и создайте первую карточку
+            </div>
+          </div>
+        </RouterLink>
+
+        <div v-else class="grid grid-cols-2 lg:grid-cols-4 gap-3">
           <RouterLink
-            v-for="p in homeProjects"
+            v-for="p in recentProjects"
             :key="p.id"
             :to="p.to"
             class="group block min-w-0"
           >
             <div class="relative aspect-[16/9] rounded-xl overflow-hidden bg-ink-100 mb-2">
-              <img :src="p.thumbnail" :alt="p.title" class="w-full h-full object-cover" />
+              <img
+                v-if="p.thumbnail"
+                :src="p.thumbnail"
+                :alt="p.title"
+                class="w-full h-full object-cover"
+                loading="lazy"
+              />
+              <div v-else class="w-full h-full grid place-items-center text-ink-400">
+                <Icon name="image" :size="20" />
+              </div>
               <button
                 type="button"
                 class="absolute top-1.5 right-1.5 grid place-items-center w-7 h-7 rounded-lg bg-white/90 text-ink-500 hover:text-ink-900"
