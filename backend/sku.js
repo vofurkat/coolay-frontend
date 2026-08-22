@@ -11,6 +11,8 @@
  */
 
 import { requireKieKey } from './env.js'
+import { load, readUploadAsDataUrl } from './store.js'
+import { consumeCredits } from './plans.js'
 
 const KIE_API_KEY = requireKieKey()
 const KIE_BASE = 'https://api.kie.ai'
@@ -261,6 +263,15 @@ const IMAGE_SLOTS = {
   },
 }
 
+export { IMAGE_SLOTS }
+
+/**
+ * Слоты, где в кадре есть человек. Только они участвуют в якорном
+ * конвейере: остальные кадры показывают товар отдельно, и «единая модель»
+ * для них не имеет смысла.
+ */
+export const MODEL_SLOTS = new Set(['front', 'back', 'lifestyle'])
+
 const STYLE_PROMPT = {
   'Чистый студийный': 'clean studio product photography, professional e-commerce look',
   'На модели': 'fashion photography on a realistic human model',
@@ -280,14 +291,104 @@ const SHADOW_PROMPT = {
   'Без тени': 'no visible shadow',
 }
 
-function buildImagePrompt({ slotId, productPrompt, settings }) {
+/**
+ * Пользователь на шаге AI-анализа может поправить пол.
+ * Без явного хинта слоты «на модели» рисуют «realistic human model» —
+ * и мужская вещь часто выходит на женщине (или наоборот).
+ */
+function genderModelHint(raw) {
+  const s = String(raw || '').trim().toLowerCase()
+  if (!s || s === '—' || s === '-') return null
+  if (/жен|woman|women|female/.test(s)) {
+    return {
+      audience: "women's / female",
+      model:
+        'The human model MUST be an adult woman (female). Do NOT depict a man, boy, or androgynous figure. Adult female face, body and proportions.',
+    }
+  }
+  if (/дет|child|kid|boy|girl/.test(s)) {
+    return {
+      audience: "children's",
+      model:
+        'The human model MUST be a child appropriate for the garment. Do NOT depict an adult model.',
+    }
+  }
+  if (/унисекс|unisex/.test(s)) {
+    return {
+      audience: 'unisex',
+      model:
+        'The human model may be male or female; keep the look gender-neutral and adult unless the garment is clearly for children.',
+    }
+  }
+  if (/муж|man|men|male/.test(s)) {
+    return {
+      audience: "men's / male",
+      model:
+        'The human model MUST be an adult man (male). Do NOT depict a woman, girl, or androgynous figure. Adult male face, body and proportions.',
+    }
+  }
+  return null
+}
+export function buildImagePrompt({
+  slotId,
+  productPrompt,
+  settings,
+  extraPrompt = '',
+  hasRefImage = false,
+  gender = '',
+  anchorRef = false,
+  modelPassport = null,
+}) {
   const slot = IMAGE_SLOTS[slotId]
   if (!slot) return null
+
   const parts = [
     slot.prompt,
     `Product: ${productPrompt}.`,
     'Keep the product identity, colour, proportions, material and every detail 100% identical to the reference photo. Do not invent a different product.',
   ]
+
+  // Вторая картинка — референс шаблона. Её роль нужно объяснить словами:
+  // иначе модель воспринимает её как второй товар и лепит гибрид двух вещей.
+  if (hasRefImage) {
+    parts.push(
+      'The FIRST image is the product to reproduce. The SECOND image is a style reference only: copy its composition, framing, camera angle, lighting and mood, but NEVER copy the product, garment, colour or branding from it.',
+    )
+  }
+
+  // ЯКОРЬ МОДЕЛИ. Ключевая часть регламента: без неё каждый кадр получает
+  // новую модель в новой одежде, и карточка выглядит как съёмка разных
+  // товаров. Якорное фото — уже сгенерированный нами кадр «вид спереди».
+  if (anchorRef) {
+    parts.push(
+      `The LAST image is the APPROVED CAST REFERENCE from the same photoshoot of this exact product. ` +
+        `It defines WHO the model is and WHAT ELSE they wear. ` +
+        `You MUST reuse the very same person: identical face, facial features, skin tone, hair colour, hair length and hairstyle, age, body type and height. ` +
+        `You MUST also reuse every OTHER garment and accessory worn there (trousers/jeans/skirt, shoes, belt, socks, jewellery) with the same colour and style. ` +
+        `Keep the same studio, background, and lighting setup. ` +
+        `The ONLY things that may change are the camera angle and the model's pose, exactly as described above. ` +
+        `Do NOT cast a different person, do NOT restyle the hair, do NOT swap the other clothing items or shoes.`,
+    )
+  }
+
+  // Текстовый портрет модели дублирует якорь словами. Картинка задаёт
+  // внешность точнее, но на сильных сменах ракурса (вид сзади) генератор
+  // склонен «дорисовывать» своё — словесный замок это ограничивает.
+  if (modelPassport) {
+    const mp = []
+    if (modelPassport.model) mp.push(`Model: ${modelPassport.model}`)
+    if (modelPassport.hair) mp.push(`Hair: ${modelPassport.hair}`)
+    if (modelPassport.outfit) mp.push(`Other garments that must stay identical: ${modelPassport.outfit}`)
+    if (modelPassport.shoes) mp.push(`Footwear that must stay identical: ${modelPassport.shoes}`)
+    if (modelPassport.scene) mp.push(`Set and lighting: ${modelPassport.scene}`)
+    if (mp.length) parts.push(`Cast sheet (must match exactly) — ${mp.join('. ')}.`)
+  }
+  if (extraPrompt) parts.push(`Art direction: ${extraPrompt}.`)
+
+  const hint = genderModelHint(gender)
+  if (hint) {
+    parts.push(`Target audience: ${hint.audience} product.`)
+  }
 
   // Слоты только с товаром: если исходное фото сделано на модели или в
   // интерьере, модель/окружение нужно убрать явно — иначе они «протекают»
@@ -308,6 +409,12 @@ function buildImagePrompt({ slotId, productPrompt, settings }) {
     if (sh) parts.push(sh + '.')
   }
 
+  // Слоты с человеком: пол из анализа обязателен, иначе генератор
+  // подставляет «типичную» женскую модель даже на мужскую одежду.
+  if (sceneSlot && hint) {
+    parts.push(hint.model)
+  }
+
   const st = STYLE_PROMPT[settings.style]
   if (st && slotId === 'main') parts.push(st + '.')
 
@@ -315,7 +422,16 @@ function buildImagePrompt({ slotId, productPrompt, settings }) {
   return parts.join(' ')
 }
 
-async function createImageTask({ imageUrl, prompt, aspect }) {
+export async function createImageTask({ imageUrl, prompt, aspect, refUrl, anchorUrl }) {
+  // Порядок картинок закреплён и описан в промте словами:
+  //   1) фото товара — эталон самой вещи;
+  //   2) референс шаблона — только композиция и свет;
+  //   3) якорный кадр — кто модель и что ещё на ней надето.
+  // Промт ссылается на них как FIRST / SECOND / LAST, поэтому менять
+  // порядок нельзя: ссылки в тексте перестанут соответствовать входу.
+  const images = [imageUrl]
+  if (refUrl) images.push(refUrl)
+  if (anchorUrl) images.push(anchorUrl)
   const { resp, json } = await fetchJson(
     `${KIE_BASE}/api/v1/jobs/createTask`,
     {
@@ -324,7 +440,7 @@ async function createImageTask({ imageUrl, prompt, aspect }) {
       body: JSON.stringify({
         model: IMAGE_MODEL,
         input: {
-          image_urls: [imageUrl],
+          image_urls: images,
           prompt: prompt.slice(0, 5000),
           aspect_ratio: ALLOWED_AR.has(aspect) ? aspect : 'auto',
         },
@@ -338,7 +454,7 @@ async function createImageTask({ imageUrl, prompt, aspect }) {
   return json.data.taskId
 }
 
-async function readTask(taskId) {
+export async function readTask(taskId) {
   const { json } = await fetchJson(
     `${KIE_BASE}/api/v1/jobs/recordInfo?taskId=${encodeURIComponent(taskId)}`,
     { headers: { Authorization: `Bearer ${KIE_API_KEY}` } },
@@ -359,6 +475,85 @@ async function readTask(taskId) {
     return { state: 'fail', error: data.failMsg || 'Генерация не удалась' }
   }
   return { state: 'processing' }
+}
+
+/* ─────────────────────── паспорт модели (якорь) ─────────────────────── */
+
+/** Внешний URL картинки → data URL (Gemini принимает только inline_data). */
+async function urlToDataUrl(url, timeoutMs = 60000) {
+  const ctrl = new AbortController()
+  const t = setTimeout(() => ctrl.abort(), timeoutMs)
+  try {
+    const resp = await fetch(url, { signal: ctrl.signal })
+    if (!resp.ok) throw new Error(`FETCH_FAILED: ${resp.status}`)
+    const type = (resp.headers.get('content-type') || 'image/png').split(';')[0]
+    if (!/^image\//.test(type)) throw new Error('FETCH_FAILED: not an image')
+    const buf = Buffer.from(await resp.arrayBuffer())
+    if (!buf.length) throw new Error('FETCH_FAILED: empty')
+    return `data:${type};base64,${buf.toString('base64')}`
+  } finally {
+    clearTimeout(t)
+  }
+}
+
+const MODEL_PASSPORT_FN = {
+  name: 'report_cast',
+  description:
+    'Describe the human model and everything they wear on this e-commerce photo, so that the SAME person in the SAME outfit can be reproduced on other shots.',
+  parameters: {
+    type: 'OBJECT',
+    properties: {
+      model: S(
+        'The person: apparent age range, gender, ethnicity/skin tone, build, height impression, distinctive facial features. English, max 45 words.',
+      ),
+      hair: S('Hair: colour, length, texture and exact styling. English, max 20 words.'),
+      outfit: S(
+        'Every garment EXCEPT the main product (trousers/jeans/skirt/shorts, belt, socks, outerwear, jewellery): type, colour, fit. English, max 40 words. Empty string if nothing else is visible.',
+      ),
+      shoes: S('Footwear: type, colour, details. English, max 20 words. Empty string if not visible.'),
+      scene: S('Background, set and lighting setup. English, max 25 words.'),
+    },
+    required: ['model', 'hair', 'outfit', 'shoes', 'scene'],
+  },
+}
+
+/**
+ * «Паспорт модели» по якорному кадру.
+ *
+ * Одной картинки-референса генератору мало: при сильной смене ракурса
+ * (вид сзади) он охотно меняет причёску и подменяет джинсы с обувью.
+ * Словесное описание работает как второй, независимый замок.
+ *
+ * Ошибки наверх не пробрасываются: паспорт — улучшение, и его отсутствие
+ * не должно останавливать генерацию остальных кадров.
+ */
+export async function describeModel(anchorUrl) {
+  if (!anchorUrl || typeof anchorUrl !== 'string') return null
+  try {
+    const dataUrl = await urlToDataUrl(anchorUrl)
+    const { args } = await geminiCall({
+      prompt: [
+        'You are a fashion photography continuity supervisor.',
+        'Describe the model and their full outfit on the attached photo precisely enough that the SAME person,',
+        'in the SAME secondary clothing and shoes, can be reproduced on additional shots from other angles.',
+        'Describe only what is actually visible. Call report_cast.',
+      ].join(' '),
+      imageDataUrl: dataUrl,
+      fn: MODEL_PASSPORT_FN,
+      thinkingLevel: 'low',
+    })
+    const out = {
+      model: str(args.model),
+      hair: str(args.hair),
+      outfit: str(args.outfit),
+      shoes: str(args.shoes),
+      scene: str(args.scene),
+    }
+    return out.model || out.hair ? out : null
+  } catch (e) {
+    console.error('[sku:passport]', e.message)
+    return null
+  }
 }
 
 // ─────────────────────────── SKU ───────────────────────────
@@ -575,6 +770,102 @@ async function handleContent(payload) {
   }
 }
 
+/**
+ * Кэш «локальный файл → публичный URL в хранилище kie.ai».
+ *
+ * Без кэша один и тот же референс заливался бы заново на КАЖДУЮ генерацию:
+ * шаблон применяют десятки раз, а картинка не меняется. Ключ — путь файла,
+ * а имена файлов содержат случайный хеш и никогда не переиспользуются, поэтому
+ * устаревание кэша невозможно.
+ */
+const refUrlCache = new Map()
+
+async function publicRefUrl(localUrl) {
+  if (!localUrl) return null
+  if (/^https?:\/\//.test(localUrl)) return localUrl // уже внешний URL
+  const cached = refUrlCache.get(localUrl)
+  if (cached) return cached
+  const dataUrl = await readUploadAsDataUrl(localUrl)
+  if (!dataUrl) return null
+  try {
+    const url = await uploadImage(dataUrl)
+    refUrlCache.set(localUrl, url)
+    return url
+  } catch {
+    // Референс — улучшение, а не обязательное условие: если залить не вышло,
+    // генерируем по базовому промту, а не роняем весь запрос.
+    return null
+  }
+}
+
+/**
+ * Раскладывает референсы шаблона по слотам.
+ *
+ * Соответствие ищется в три приёма, от точного к приблизительному:
+ *  1. slotHints — явное указание «этот референс для слота back»;
+ *  2. по названию кадра (label) через таблицу синонимов;
+ *  3. по порядку — остатки раздаются свободным слотам.
+ * Третий шаг важен: заказчик заводит референсы как «первый, второй, третий»
+ * и не обязан знать наши внутренние id слотов.
+ */
+const LABEL_TO_SLOT = [
+  [/главн|основн|hero|main/i, 'main'],
+  [/сзад|спин|back/i, 'back'],
+  [/спереди|перед|front|модел/i, 'front'],
+  [/ткан|фактур|деталь|макро|fabric|detail/i, 'fabric'],
+  [/слож|folded|пачк/i, 'folded'],
+  [/лайф|lifestyle|интерьер/i, 'lifestyle'],
+  [/вырез|cutout|прозрач/i, 'cutout'],
+]
+
+export async function resolveTemplatePlan(templateId, wantedSlots) {
+  const plan = new Map()
+  if (!templateId || typeof templateId !== 'string') return plan
+
+  let tpl = null
+  try {
+    tpl = load().templates.find((t) => t.id === templateId) || null
+  } catch {
+    return plan // база недоступна — работаем без шаблона
+  }
+  if (!tpl || !Array.isArray(tpl.references) || !tpl.references.length) return plan
+
+  const free = new Set(wantedSlots)
+  const assign = (slotId, ref) => {
+    if (!free.has(slotId)) return false
+    plan.set(slotId, { prompt: ref.prompt || '', localUrl: ref.image || '' })
+    free.delete(slotId)
+    return true
+  }
+
+  const rest = []
+  // 1. Явные подсказки.
+  for (const ref of tpl.references) {
+    const hinted = Object.entries(tpl.slotHints || {}).find(([, refId]) => refId === ref.id)?.[0]
+    if (hinted && assign(hinted, ref)) continue
+    rest.push(ref)
+  }
+  // 2. По названию кадра.
+  const stillRest = []
+  for (const ref of rest) {
+    const hit = LABEL_TO_SLOT.find(([re]) => re.test(ref.label || ''))
+    if (hit && assign(hit[1], ref)) continue
+    stillRest.push(ref)
+  }
+  // 3. По порядку.
+  for (const ref of stillRest) {
+    const next = wantedSlots.find((s) => free.has(s))
+    if (!next) break
+    assign(next, ref)
+  }
+
+  // Заливаем картинки только для реально задействованных слотов.
+  for (const [slotId, entry] of plan) {
+    plan.set(slotId, { ...entry, publicUrl: await publicRefUrl(entry.localUrl) })
+  }
+  return plan
+}
+
 async function handleImages(payload) {
   const { imageUrl, slots, settings, productPrompt } = payload || {}
   if (!imageUrl || typeof imageUrl !== 'string' || !/^https?:\/\//.test(imageUrl)) {
@@ -591,14 +882,29 @@ async function handleImages(payload) {
   }
   const pp = str(productPrompt, 'the product from the reference photo')
 
+  // Шаблон: его референсы заменяют стандартные промты слотов.
+  const plan = await resolveTemplatePlan(payload?.templateId, wanted)
+
   const tasks = []
   for (const slotId of wanted) {
-    const prompt = buildImagePrompt({ slotId, productPrompt: pp, settings: s })
+    const ref = plan.get(slotId)
+    // Промт шаблона ДОПОЛНЯЕТ базовый, а не затирает его: базовый держит
+    // тождественность товара («не придумывай другой товар»), без него
+    // генератор начинает рисовать вещь из референса вместо нашей.
+    const prompt = buildImagePrompt({
+      slotId,
+      productPrompt: pp,
+      settings: s,
+      extraPrompt: ref?.prompt || '',
+      hasRefImage: !!ref?.publicUrl,
+      gender: payload?.gender || '',
+    })
     try {
       const taskId = await createImageTask({
         imageUrl,
         prompt,
         aspect: IMAGE_SLOTS[slotId].aspect,
+        refUrl: ref?.publicUrl || null,
       })
       tasks.push({ slotId, taskId, state: 'processing' })
     } catch (e) {
@@ -607,7 +913,7 @@ async function handleImages(payload) {
     await sleep(120) // мягкий rate-limit
   }
 
-  return { status: 200, body: { ok: true, tasks } }
+  return { status: 200, body: { ok: true, tasks, templateApplied: plan.size > 0 } }
 }
 
 async function handleTasks(taskIds) {
@@ -633,10 +939,15 @@ export const skuSlots = IMAGE_SLOTS
  * @param {{ url: URL, sendJson: Function, readBody: Function }} ctx
  */
 export async function skuRouter(req, res, ctx) {
-  const { url, sendJson, readBody } = ctx
+  const { url, sendJson, readBody, auth } = ctx
   const path = url.pathname
 
   if (!path.startsWith('/api/sku/')) return false
+
+  if (req.method === 'POST' && !auth) {
+    sendJson(res, 401, { ok: false, error: 'Требуется вход' })
+    return true
+  }
 
   try {
     if (req.method === 'GET' && path === '/api/sku/task') {
@@ -675,6 +986,28 @@ export async function skuRouter(req, res, ctx) {
         error: tooBig ? 'Файл слишком большой (макс. 30 МБ)' : 'Некорректный запрос',
       })
       return true
+    }
+
+    // ── Списание кредит-токенов ДО генерации (server-side, нельзя обойти) ──
+    const COST = {
+      '/api/sku/analyze': () => 1,
+      '/api/sku/content': () => 1,
+      '/api/sku/images': () =>
+        Math.max(1, (Array.isArray(payload?.slots) ? payload.slots : []).filter((x) => IMAGE_SLOTS[x]).length),
+    }
+    const cost = COST[path] ? COST[path]() : 0
+    if (cost > 0 && auth?.client) {
+      const db = load()
+      const okConsume = await consumeCredits(db, auth.client, {
+        count: cost,
+        tool: path.replace('/api/', '').replaceAll('/', ':'),
+        accountId: auth.account.id,
+        source: 'web',
+      })
+      if (!okConsume) {
+        sendJson(res, 402, { ok: false, error: 'Кредит-токены закончились — обновите тариф' })
+        return true
+      }
     }
 
     let r

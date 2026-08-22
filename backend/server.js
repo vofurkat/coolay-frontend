@@ -1,10 +1,20 @@
 import './env.js' // должен быть первым: наполняет process.env из .env
 import http from 'node:http'
+import fs from 'node:fs'
 import { requireKieKey } from './env.js'
 import { skuRouter } from './sku.js'
+import { cardsRouter } from './cards.js'
+import { skuJobsRouter } from './skujobs.js'
+import { templatesRouter } from './templates.js'
+import { teamRouter } from './team.js'
+import { telegramRouter } from './telegram.js'
+import { authRouter, getAuth } from './auth.js'
+import { sadminRouter, ensureFirstAdmin } from './sadmin.js'
+import { consumeCredits } from './plans.js'
+import { resolveUpload, CONTENT_TYPES, load } from './store.js'
 
 /**
- * Coolay backend — прокси к kie.ai.
+ * Coolay backend — прокси к kie.ai + хранилище данных приложения.
  *
  * Эндпоинты:
  *  POST /api/generate        — прямая генерация Nano Banana 2 по готовому prompt
@@ -14,9 +24,13 @@ import { skuRouter } from './sku.js'
  *  POST /api/sku/content     — Gemini 3.6 Flash: контент карточки RU/EN/UZ/TR + SEO
  *  POST /api/sku/images      — Nano Banana 2 Lite: студийные фото товара
  *  GET  /api/sku/task        — статус задач генерации изображений
+ *  /api/templates/*          — шаблоны карточек по категориям (templates.js)
+ *  /api/team/*               — сотрудники, совместные проекты, план и квота (team.js)
+ *  /api/telegram/*           — бот @coolay_bot и Mini App (telegram.js)
+ *  GET  /api/files/:name     — отдача загруженных изображений
  *  GET  /api/health
  *
- * API-ключ kie.ai хранится ТОЛЬКО на сервере (env KIE_API_KEY).
+ * Секреты (KIE_API_KEY, TELEGRAM_BOT_TOKEN) хранятся ТОЛЬКО на сервере в .env.
  */
 
 const PORT = process.env.PORT || 8793
@@ -230,6 +244,44 @@ function errorResponse(res, e) {
   return sendJson(res, 502, { ok: false, error: map[key] || 'Ошибка генерации' })
 }
 
+/**
+ * Списание кредит-токенов за генерацию в инструментах (/api/generate*).
+ * Списываем ДО запуска — квоту нельзя обойти через DevTools.
+ * Возвращает true, если можно продолжать; иначе сам отвечает 402.
+ */
+async function chargeGeneration(res, auth, tool) {
+  const db = load()
+  const ok = await consumeCredits(db, auth.client, {
+    count: 1,
+    tool,
+    accountId: auth.account.id,
+    source: 'web',
+  })
+  if (!ok) {
+    sendJson(res, 402, { ok: false, error: 'Кредит-токены закончились — обновите тариф' })
+    return false
+  }
+  return true
+}
+
+/**
+ * Списание N кредит-токенов без формирования ответа.
+ *
+ * Отличие от chargeGeneration: у пакетного задания стоимость переменная
+ * (до 10 товаров × 7 ракурсов), и решение, что ответить клиенту, принимает
+ * сам модуль заданий. Поэтому здесь только boolean.
+ */
+async function chargeCredits(auth, count, tool) {
+  if (!auth?.client || count <= 0) return true
+  const db = load()
+  return consumeCredits(db, auth.client, {
+    count,
+    tool,
+    accountId: auth.account?.id,
+    source: 'web',
+  })
+}
+
 // --- Прямая генерация (готовый prompt) ---
 async function handleGenerate(req, res) {
   let payload
@@ -312,19 +364,109 @@ const server = http.createServer(async (req, res) => {
   const path = url.pathname
 
   if (req.method === 'GET' && path === '/api/health')
-    return sendJson(res, 200, { ok: true, service: 'coolay-backend', sku: true })
+    return sendJson(res, 200, {
+      ok: true,
+      service: 'coolay-backend',
+      sku: true,
+      templates: true,
+      team: true,
+      auth: true,
+      telegram: !!process.env.TELEGRAM_BOT_TOKEN,
+      // Флаги новых модулей — deploy.sh по ним проверяет, что прод поднялся
+      // с полным набором роутов, а не с частично скопированными файлами.
+      cards: true,
+      jobs: true,
+    })
 
-  // Модуль карточек товара (SKU)
-  if (path.startsWith('/api/sku/')) {
-    const handled = await skuRouter(req, res, { url, sendJson, readBody })
+  // Отдача загруженных изображений (референсы шаблонов, фото из Telegram)
+  if (req.method === 'GET' && path.startsWith('/api/files/')) {
+    const full = resolveUpload(path.slice('/api/files/'.length))
+    if (!full) return sendJson(res, 404, { ok: false, error: 'Файл не найден' })
+    const ext = (full.split('.').pop() || '').toLowerCase()
+    res.writeHead(200, {
+      'Content-Type': CONTENT_TYPES[ext] || 'application/octet-stream',
+      // В имени файла есть случайный хеш, поэтому содержимое по этому адресу
+      // никогда не меняется — кэшируем надолго.
+      'Cache-Control': 'public, max-age=31536000, immutable',
+      'Access-Control-Allow-Origin': '*',
+    })
+    return fs.createReadStream(full).pipe(res)
+  }
+
+  // Авторизация клиентов (регистрация / вход / Google / сессия)
+  if (path.startsWith('/api/auth/')) {
+    const handled = await authRouter(req, res, { url, sendJson, readBody })
     if (handled) return
     return sendJson(res, 404, { ok: false, error: 'Not found' })
   }
 
-  if (req.method === 'POST' && path === '/api/generate') return handleGenerate(req, res)
-  if (req.method === 'POST' && path === '/api/generate-smart') return handleGenerateSmart(req, res)
+  // Супер-админка платформы (/sadmin)
+  if (path.startsWith('/api/sadmin/')) {
+    const handled = await sadminRouter(req, res, { url, sendJson, readBody })
+    if (handled) return
+    return sendJson(res, 404, { ok: false, error: 'Not found' })
+  }
+
+  // Текущая клиентская сессия — один раз на запрос, передаём во все роутеры.
+  let auth = getAuth(req)
+  if (auth?.blocked) {
+    return sendJson(res, 403, { ok: false, error: 'Аккаунт заблокирован — обратитесь в поддержку Coolay' })
+  }
+
+  // Модуль карточек товара (SKU)
+  if (path.startsWith('/api/sku/')) {
+    // Хранилище карточек и поиск похожих — до skuRouter: у него общий
+    // префикс /api/sku/, а списание кредитов здесь не нужно.
+    const byCards = await cardsRouter(req, res, { url, sendJson, readBody, auth })
+    if (byCards) return
+
+    // Задания генерации сами списывают кредиты (кадров может быть до 60),
+    // поэтому получают функцию списания, а не фиксированную ставку.
+    const byJobs = await skuJobsRouter(req, res, {
+      url,
+      sendJson,
+      readBody,
+      auth,
+      charge: (count, tool) => chargeCredits(auth, count, tool),
+    })
+    if (byJobs) return
+
+    const handled = await skuRouter(req, res, { url, sendJson, readBody, auth })
+    if (handled) return
+    return sendJson(res, 404, { ok: false, error: 'Not found' })
+  }
+
+  // Шаблоны карточек по категориям
+  if (path.startsWith('/api/templates')) {
+    const handled = await templatesRouter(req, res, { url, sendJson, readBody, auth })
+    if (handled) return
+    return sendJson(res, 404, { ok: false, error: 'Not found' })
+  }
+
+  // Сотрудники, совместные проекты, план и квота
+  if (path.startsWith('/api/team/')) {
+    const handled = await teamRouter(req, res, { url, sendJson, readBody, auth })
+    if (handled) return
+    return sendJson(res, 404, { ok: false, error: 'Not found' })
+  }
+
+  // Telegram-бот и Mini App (авторизация своя — по Telegram ID)
+  if (path.startsWith('/api/telegram/')) {
+    const handled = await telegramRouter(req, res, { url, sendJson, readBody })
+    if (handled) return
+    return sendJson(res, 404, { ok: false, error: 'Not found' })
+  }
+
+  if (req.method === 'POST' && (path === '/api/generate' || path === '/api/generate-smart')) {
+    if (!auth) return sendJson(res, 401, { ok: false, error: 'Требуется вход' })
+    const tool = path === '/api/generate' ? 'generate' : 'generate-smart'
+    if (!(await chargeGeneration(res, auth, tool))) return
+    return path === '/api/generate' ? handleGenerate(req, res) : handleGenerateSmart(req, res)
+  }
   return sendJson(res, 404, { ok: false, error: 'Not found' })
 })
+
+await ensureFirstAdmin()
 
 server.listen(PORT, '127.0.0.1', () => {
   console.log(`coolay-backend listening on http://127.0.0.1:${PORT}`)

@@ -42,8 +42,10 @@ const lightboxIndex = ref<number | null>(null)
 
 const card = computed<SkuCard | null>(() => store.getCard(String(route.params.id)))
 
-onMounted(() => {
-  store.restore()
+onMounted(async () => {
+  // Карточки теперь приходят с сервера: проверять «не найдено» до ответа
+  // нельзя — иначе экран мигал бы ошибкой на каждой загрузке страницы.
+  await store.restore()
   if (!card.value) notFound.value = true
 })
 

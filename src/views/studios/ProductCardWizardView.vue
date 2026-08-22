@@ -427,9 +427,23 @@ const galleryUrls = computed(() =>
 const createAnother = ref(false)
 const savedCard = computed(() => (d.value.savedCardId ? store.getCard(d.value.savedCardId) : null))
 
-function finish() {
+const saving = ref(false)
+
+async function finish() {
   if (!d.value.analysis || !d.value.content.ru) return
-  if (!savedCard.value) store.saveCard(auth.user?.name || 'Пользователь')
+  // Карточка сохраняется на сервере, поэтому шаг 5 показываем только после
+  // подтверждения записи: иначе пользователь увидел бы «готово» на карточке,
+  // которой на сервере нет.
+  if (!savedCard.value) {
+    saving.value = true
+    error.value = ''
+    const card = await store.saveCard(auth.user?.name || 'Пользователь')
+    saving.value = false
+    if (!card) {
+      error.value = store.error || 'Не удалось сохранить карточку'
+      return
+    }
+  }
   goStep(5)
 }
 

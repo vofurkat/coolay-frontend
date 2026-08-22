@@ -167,6 +167,19 @@ export interface SkuImageSettings {
   quality: string
 }
 
+/**
+ * «Паспорт модели» — описание человека и всей прочей одежды с якорного кадра.
+ * Нужен, чтобы остальные ракурсы снимались с ТЕМ ЖЕ человеком в той же обуви
+ * и брюках, а не с новой моделью на каждом кадре.
+ */
+export interface SkuModelPassport {
+  model: string
+  hair: string
+  outfit: string
+  shoes: string
+  scene: string
+}
+
 /** Канал публикации */
 export type ChannelStatus = 'ready' | 'check' | 'published' | 'draft'
 
@@ -236,6 +249,17 @@ export interface SkuCard {
     images: number
     adaptation: number
   }
+
+  /** Перцептивный хеш исходного фото — по нему ищем повторы товара. */
+  imageHash?: string
+  /** Кадр-эталон модели: на него опираются остальные ракурсы. */
+  anchorUrl?: string
+  /** Внешность модели и прочая одежда — для повторной генерации. */
+  modelPassport?: SkuModelPassport | null
+  /** Откуда создана карточка: веб-мастер, пакет или Telegram-бот. */
+  source?: string
+  /** Идентификатор пакетной генерации, если карточка создана в пакете. */
+  batchId?: string | null
 }
 
 /** Черновик мастера — переживает перезагрузку страницы */
@@ -268,4 +292,12 @@ export interface SkuDraft {
   imageCredits: number
 
   savedCardId: string | null
+
+  /** Хеш загруженного фото — считается в браузере, ищет повторы на сервере. */
+  imageHash?: string
+  /** Активное задание генерации на сервере (переживает перезагрузку страницы). */
+  jobId?: string | null
+  /** Якорный кадр и паспорт модели текущего задания. */
+  anchorUrl?: string
+  modelPassport?: SkuModelPassport | null
 }

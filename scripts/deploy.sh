@@ -25,7 +25,7 @@ BACKEND_TARGET_DIR="/var/www/demo.coolay.website/backend"
 # ВАЖНО: список должен содержать ВСЕ файлы, которые импортирует server.js.
 # Любой пропущенный модуль — это падение процесса при старте (ERR_MODULE_NOT_FOUND),
 # потому что импорты в ES-модулях разрешаются сразу при загрузке.
-BACKEND_FILES=(server.js sku.js env.js store.js templates.js team.js telegram.js auth.js plans.js sadmin.js)
+BACKEND_FILES=(server.js sku.js env.js store.js templates.js team.js telegram.js auth.js plans.js sadmin.js cards.js skujobs.js)
 
 log()  { printf '\033[1;32m▸\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m!\033[0m %s\n' "$*"; }

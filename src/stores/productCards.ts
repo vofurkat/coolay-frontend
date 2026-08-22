@@ -9,9 +9,31 @@ import type {
   SkuSlotId,
 } from '@/types/sku'
 import { LANG_LIST } from '@/types/sku'
+import {
+  createCard,
+  deleteCard,
+  importCards,
+  listCards,
+  patchCard,
+} from '@/data/skuApi'
 
+/**
+ * ГДЕ ЖИВУТ ДАННЫЕ.
+ *
+ * Черновик мастера (DRAFT_KEY) остаётся в localStorage: это незавершённая
+ * работа одного человека за одним браузером, серверу она не нужна.
+ *
+ * Готовые карточки переехали на сервер (/api/sku/cards). В localStorage они
+ * лежали до этого, и это ломало сразу многое: историю не видел ни коллега,
+ * ни Telegram-бот, ни тот же пользователь с телефона; проверить «такой товар
+ * уже создавали» было не с чем; очистка кэша браузера уносила весь каталог.
+ *
+ * LEGACY_CARDS_KEY читается один раз — чтобы перенести накопленное на сервер,
+ * после чего ключ удаляется.
+ */
 const DRAFT_KEY = 'coolay_sku_draft'
-const CARDS_KEY = 'coolay_sku_cards'
+const LEGACY_CARDS_KEY = 'coolay_sku_cards'
+const MIGRATED_KEY = 'coolay_sku_cards_migrated'
 
 /** Каталог слотов изображений (шаг 4) */
 export const SLOT_DEFS: SkuSlotDef[] = [
@@ -178,16 +200,84 @@ export const useProductCardsStore = defineStore('productCards', () => {
   const draft = ref<SkuDraft>(emptyDraft())
   const cards = ref<SkuCard[]>([])
   const loaded = ref(false)
+  const loading = ref(false)
+  const error = ref('')
+  /** Идёт ли перенос старой истории из браузера на сервер. */
+  const migrating = ref(false)
 
-  /** Восстановление из localStorage — вызывается на монтировании страниц модуля */
-  function restore() {
-    if (loaded.value) return
+  /**
+   * Восстановление состояния модуля.
+   * Черновик — из localStorage (он локальный), карточки — с сервера.
+   * Вызывается при монтировании страниц модуля, поэтому защищено от
+   * повторного входа: параллельные вызовы ждут один и тот же запрос.
+   */
+  let restorePromise: Promise<void> | null = null
+
+  function restoreDraft() {
     const d = readJson<Partial<SkuDraft> | null>(DRAFT_KEY, null)
     if (d && typeof d === 'object') {
       draft.value = { ...emptyDraft(), ...d }
     }
-    cards.value = readJson<SkuCard[]>(CARDS_KEY, [])
-    loaded.value = true
+  }
+
+  async function restore(force = false) {
+    restoreDraft()
+    if (loaded.value && !force) return
+    if (restorePromise) return restorePromise
+    restorePromise = (async () => {
+      loading.value = true
+      error.value = ''
+      try {
+        await migrateLegacyCards()
+        const res = await listCards()
+        if (res.ok) {
+          cards.value = res.cards
+          loaded.value = true
+        } else {
+          error.value = res.error
+        }
+      } finally {
+        loading.value = false
+        restorePromise = null
+      }
+    })()
+    return restorePromise
+  }
+
+  /**
+   * Разовый перенос карточек из localStorage на сервер.
+   * Флаг ставим только после успешного ответа: иначе сбой сети привёл бы
+   * к потере истории — ключ бы очистился, а на сервер ничего не легло.
+   */
+  async function migrateLegacyCards() {
+    let legacy: SkuCard[] = []
+    try {
+      if (localStorage.getItem(MIGRATED_KEY)) return
+      legacy = readJson<SkuCard[]>(LEGACY_CARDS_KEY, [])
+    } catch {
+      return
+    }
+    if (!legacy.length) {
+      try {
+        localStorage.setItem(MIGRATED_KEY, '1')
+        localStorage.removeItem(LEGACY_CARDS_KEY)
+      } catch {
+        /* приватный режим — не критично */
+      }
+      return
+    }
+    migrating.value = true
+    try {
+      const res = await importCards(legacy)
+      if (res.ok) {
+        localStorage.setItem(MIGRATED_KEY, '1')
+        localStorage.removeItem(LEGACY_CARDS_KEY)
+      }
+    } catch {
+      /* перенос повторится при следующем открытии */
+    } finally {
+      migrating.value = false
+    }
   }
 
   function persistDraft() {
@@ -201,14 +291,6 @@ export const useProductCardsStore = defineStore('productCards', () => {
       } catch {
         /* ignore */
       }
-    }
-  }
-
-  function persistCards() {
-    try {
-      localStorage.setItem(CARDS_KEY, JSON.stringify(cards.value))
-    } catch {
-      /* ignore */
     }
   }
 
@@ -245,20 +327,21 @@ export const useProductCardsStore = defineStore('productCards', () => {
     return cards.value.find((c) => c.id === id || c.sku === id) || null
   }
 
-  /** Сохранение готовой карточки в историю (шаг 5) */
-  function saveCard(author: string): SkuCard {
+  /**
+   * Сохранение готовой карточки на сервер (шаг 5).
+   * При ошибке возвращаем null, а не бросаем: мастер покажет текст ошибки,
+   * но готовые кадры и контент у пользователя на шаге останутся.
+   */
+  async function saveCard(author: string): Promise<SkuCard | null> {
     const d = draft.value
     const now = new Date().toISOString()
     const images = d.images.filter((i) => i.state === 'success')
     const readiness = computeReadiness({ content: d.content, specs: d.specs, images: d.images })
 
-    const card: SkuCard = {
-      id: `card-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    const payload: Partial<SkuCard> & { imageHash?: string } = {
       sku: d.sku,
       productId: d.productId,
       status: 'active',
-      createdAt: now,
-      updatedAt: now,
       author,
       createdVia: 'AI-генерация',
       sourceImage: d.sourceImage || d.localPreview,
@@ -267,8 +350,7 @@ export const useProductCardsStore = defineStore('productCards', () => {
       content: d.content,
       specs: d.specs,
       tone: d.tone,
-      credits:
-        Math.round((d.analysisCredits + d.contentCredits + d.imageCredits) * 100) / 100,
+      credits: Math.round((d.analysisCredits + d.contentCredits + d.imageCredits) * 100) / 100,
       creditBreakdown: {
         analysis: d.analysisCredits || 0,
         content: d.contentCredits || 0,
@@ -295,45 +377,79 @@ export const useProductCardsStore = defineStore('productCards', () => {
         },
       ],
       readiness,
+      // Эти три поля — основа для повторной генерации и поиска дублей:
+      // без них кнопка «Перегенерировать» дала бы другую модель.
+      imageHash: d.imageHash || '',
+      anchorUrl: d.anchorUrl || '',
+      modelPassport: d.modelPassport || null,
     }
 
-    cards.value = [card, ...cards.value].slice(0, 200)
-    persistCards()
-    draft.value.savedCardId = card.id
+    error.value = ''
+    const res = await createCard(payload)
+    if (!res.ok) {
+      error.value = res.error
+      return null
+    }
+    cards.value = [res.card, ...cards.value.filter((c) => c.id !== res.card.id)]
+    draft.value.savedCardId = res.card.id
     persistDraft()
-    return card
+    return res.card
   }
 
-  function updateCard(id: string, patch: Partial<SkuCard>, note?: string) {
+  async function updateCard(id: string, patch: Partial<SkuCard>, note?: string) {
     const i = cards.value.findIndex((c) => c.id === id)
-    if (i === -1) return
+    if (i === -1) return null
     const prev = cards.value[i]
-    const updated: SkuCard = { ...prev, ...patch, updatedAt: new Date().toISOString() }
-    updated.readiness = computeReadiness(updated)
+    const merged: SkuCard = { ...prev, ...patch }
+    const body: Partial<SkuCard> = { ...patch, readiness: computeReadiness(merged) }
     if (note) {
-      updated.activity = [
+      body.activity = [
         {
           id: `a-${Date.now()}`,
           text: note,
           author: prev.author,
-          createdAt: updated.updatedAt,
+          createdAt: new Date().toISOString(),
           icon: 'edit',
         },
         ...prev.activity,
       ].slice(0, 30)
     }
-    cards.value.splice(i, 1, updated)
-    persistCards()
+
+    // Оптимистичное обновление: правка в UI видна сразу, без ожидания сети.
+    cards.value.splice(i, 1, { ...merged, ...body, updatedAt: new Date().toISOString() })
+
+    const res = await patchCard(id, body)
+    if (!res.ok) {
+      error.value = res.error
+      // Откат: иначе пользователь видит несохранённую правку как сохранённую.
+      const back = cards.value.findIndex((c) => c.id === id)
+      if (back !== -1) cards.value.splice(back, 1, prev)
+      return null
+    }
+    const idx = cards.value.findIndex((c) => c.id === id)
+    if (idx !== -1) cards.value.splice(idx, 1, res.card)
+    return res.card
   }
 
-  function removeCard(id: string) {
+  async function removeCard(id: string) {
+    const prev = cards.value
     cards.value = cards.value.filter((c) => c.id !== id)
-    persistCards()
+    const res = await deleteCard(id)
+    if (!res.ok) {
+      error.value = res.error
+      cards.value = prev
+      return false
+    }
+    return true
   }
 
   return {
     draft,
     cards,
+    loading,
+    loaded,
+    error,
+    migrating,
     hasDraft,
     recentCards,
     restore,
