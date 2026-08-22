@@ -629,6 +629,14 @@ function zipSpecs(args) {
 
 // ─────────────────────────── обработчики ───────────────────────────
 
+/**
+ * Распознавание фото товара.
+ * Экспортируется под коротким именем: тот же анализ вызывает Telegram Mini App,
+ * а дублировать промт и разбор ответа в двух местах — верный способ получить
+ * со временем два разных поведения у сайта и у бота.
+ */
+export { handleAnalyze as skuAnalyze, handleContent as skuContent }
+
 async function handleAnalyze(payload) {
   const { image } = payload || {}
   if (!image || typeof image !== 'string' || !image.startsWith('data:image/')) {

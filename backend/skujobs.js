@@ -361,6 +361,79 @@ export function countJobImages(items) {
   )
 }
 
+/**
+ * Создание задания. Вынесено из роутера, потому что тем же конвейером
+ * пользуется Telegram Mini App: у неё нет cookie-сессии, авторизация идёт
+ * по initData, но сама генерация обязана быть одна и та же — иначе бот и
+ * сайт со временем разъедутся в поведении и правилах списания.
+ *
+ * @returns {{status:number, body:object, job?:object}}
+ */
+export async function createSkuJob({ clientId, accountId = null, items: rawItems, charge, kind }) {
+  const list = Array.isArray(rawItems) ? rawItems : []
+  if (!list.length) {
+    return { status: 400, body: { ok: false, error: 'Нет товаров для генерации' } }
+  }
+
+  // Заказчик просил до 10 товаров в пакете.
+  const items = list
+    .slice(0, 10)
+    .filter((x) => typeof x?.imageUrl === 'string' && /^https?:\/\//.test(x.imageUrl))
+    .map(makeItem)
+    .filter((x) => x.slots.length)
+
+  if (!items.length) {
+    return { status: 400, body: { ok: false, error: 'Нет корректных изображений или ракурсов' } }
+  }
+
+  // Кредиты списываем сразу за все кадры задания: считать по факту нельзя,
+  // иначе пользователь запускает пакет, не имея на него баланса.
+  const cost = countJobImages(items)
+  if (charge && !(await charge(cost, 'sku:job'))) {
+    return { status: 402, body: { ok: false, error: 'Кредит-токены закончились — обновите тариф' } }
+  }
+
+  const db = load()
+  const job = {
+    id: uid('job'),
+    clientId,
+    accountId,
+    kind: kind || (items.length > 1 ? 'batch' : 'single'),
+    state: 'running',
+    createdAt: nowIso(),
+    updatedAt: nowIso(),
+    items,
+  }
+  db.skuJobs.unshift(job)
+
+  // Задания — рабочий журнал, а не архив: держим последние 200 на клиента.
+  const mine = db.skuJobs.filter((j) => j.clientId === clientId)
+  if (mine.length > 200) {
+    const drop = new Set(mine.slice(200).map((j) => j.id))
+    db.skuJobs = db.skuJobs.filter((j) => !drop.has(j.id))
+  }
+
+  await withJobLock(job.id, () => advanceJob(job))
+  await save()
+  return { status: 200, body: { ok: true, job: publicJob(job) }, job }
+}
+
+/**
+ * Чтение состояния задания. Оно же двигает конвейер: отдельного воркера в
+ * системе нет, продвижение происходит на опросе — так процесс не держит
+ * таймеры и спокойно переживает перезапуск pm2.
+ */
+export async function getSkuJob({ clientId, id }) {
+  const db = load()
+  const job = db.skuJobs.find((j) => j.id === id && j.clientId === clientId)
+  if (!job) return { status: 404, body: { ok: false, error: 'Задание не найдено' } }
+  if (job.state !== 'done') {
+    await withJobLock(job.id, () => advanceJob(job))
+    await save()
+  }
+  return { status: 200, body: { ok: true, job: publicJob(job) }, job }
+}
+
 export async function skuJobsRouter(req, res, ctx) {
   const { url, sendJson, readBody, auth, charge } = ctx
   const path = url.pathname
@@ -370,8 +443,6 @@ export async function skuJobsRouter(req, res, ctx) {
     sendJson(res, 401, { ok: false, error: 'Требуется вход' })
     return true
   }
-
-  const db = load()
   const clientId = auth.client.id
 
   /* ── Создание задания ── */
@@ -389,67 +460,20 @@ export async function skuJobsRouter(req, res, ctx) {
     }
 
     const rawItems = Array.isArray(d?.items) ? d.items : d?.imageUrl ? [d] : []
-    if (!rawItems.length) {
-      sendJson(res, 400, { ok: false, error: 'Нет товаров для генерации' })
-      return true
-    }
-    // Заказчик просил до 10 товаров в пакете.
-    const items = rawItems
-      .slice(0, 10)
-      .filter((x) => typeof x?.imageUrl === 'string' && /^https?:\/\//.test(x.imageUrl))
-      .map(makeItem)
-      .filter((x) => x.slots.length)
-
-    if (!items.length) {
-      sendJson(res, 400, { ok: false, error: 'Нет корректных изображений или ракурсов' })
-      return true
-    }
-
-    // Кредиты списываем сразу за все кадры задания: считать по факту нельзя,
-    // иначе пользователь запускает пакет, не имея на него баланса.
-    const cost = countJobImages(items)
-    if (charge && !(await charge(cost, 'sku:job'))) {
-      sendJson(res, 402, { ok: false, error: 'Кредит-токены закончились — обновите тариф' })
-      return true
-    }
-
-    const job = {
-      id: uid('job'),
+    const r = await createSkuJob({
       clientId,
       accountId: auth.account?.id || null,
-      kind: items.length > 1 ? 'batch' : 'single',
-      state: 'running',
-      createdAt: nowIso(),
-      updatedAt: nowIso(),
-      items,
-    }
-    db.skuJobs.unshift(job)
-    // Задания — рабочий журнал, а не архив: держим последние 200 на клиента.
-    const mine = db.skuJobs.filter((j) => j.clientId === clientId)
-    if (mine.length > 200) {
-      const drop = new Set(mine.slice(200).map((j) => j.id))
-      db.skuJobs = db.skuJobs.filter((j) => !drop.has(j.id))
-    }
-
-    await withJobLock(job.id, () => advanceJob(job))
-    await save()
-    sendJson(res, 200, { ok: true, job: publicJob(job) })
+      items: rawItems,
+      charge,
+    })
+    sendJson(res, r.status, r.body)
     return true
   }
 
   /* ── Опрос состояния: он же двигает конвейер ── */
   if (req.method === 'GET') {
-    const id = url.searchParams.get('id') || ''
-    const job = db.skuJobs.find((j) => j.id === id && j.clientId === clientId)
-    if (!job) {
-      sendJson(res, 404, { ok: false, error: 'Задание не найдено' })
-      return true
-    }
-    if (job.state !== 'done') {
-      await withJobLock(job.id, () => advanceJob(job))
-      await save()
-    }
-    sendJson(res, 200, { ok: true, job: publicJob(job) })
+    const r = await getSkuJob({ clientId, id: url.searchParams.get('id') || '' })
+    sendJson(res, r.status, r.body)
     return true
   }
 
