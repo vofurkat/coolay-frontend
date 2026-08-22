@@ -1,150 +1,98 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+/**
+ * Панель Telegram-бота.
+ *
+ * ПОЧЕМУ ЗДЕСЬ НЕТ ПОЛЯ ДЛЯ ТОКЕНА. Раньше панель предлагала вставить токен
+ * бота в браузере и «подключала» его на клиенте. Это неверно по существу:
+ * токен — серверный секрет, он даёт полный контроль над ботом (чтение всех
+ * сообщений сотрудников, отправка от его имени, подмена webhook). Попав в
+ * браузер, он оказался бы в истории запросов, в расширениях и в логах прокси.
+ * Поэтому токен живёт только в .env на сервере, а панель показывает уже
+ * подключённого бота.
+ *
+ * ПОЧЕМУ НЕТ КНОПКИ «ДОБАВИТЬ СОТРУДНИКА». Сотрудники живут в одном месте —
+ * «Настройки → Пользователи». Вторая форма добавления рядом означала бы два
+ * списка, которые со временем разойдутся; вместо неё здесь ссылка на раздел.
+ *
+ * ПОЧЕМУ НЕТ «ПРОВЕРИТЬ ПО НОМЕРУ». Раньше кнопка вызывала имитацию с
+ * Math.random() и рисовала случайный результат. Реально проверить сотрудника
+ * со стороны сайта невозможно: Telegram не даёт искать людей по номеру. Связь
+ * возникает только когда сотрудник сам напишет боту и поделится контактом,
+ * поэтому здесь показывается фактическое состояние этой связи.
+ */
+import { computed, onMounted, ref } from 'vue'
 import Icon from '@/components/ui/Icon.vue'
 import Avatar from '@/components/ui/Avatar.vue'
-import { telegramBot, botEmployees } from '@/data/mock'
-import type { TelegramBotConfig, BotEmployee, BotEmployeeStatus } from '@/types'
+import { isFail, telegramApi, type BotEmployeeInfo, type BotInfo } from '@/data/platformApi'
 
-// --- Конфигурация бота ---
-const bot = ref<TelegramBotConfig>({ ...telegramBot })
-const tokenInput = ref(bot.value.token)
-const connecting = ref(false)
-const tokenError = ref<string | null>(null)
-const copied = ref(false)
+const info = ref<BotInfo | null>(null)
+const loading = ref(true)
+const error = ref('')
+const copied = ref<'app' | 'bot' | null>(null)
 
-// Проверка формата токена Telegram: 123456789:AA... (>=35 символов)
-function isValidToken(t: string) {
-  return /^\d{6,}:[A-Za-z0-9_-]{30,}$/.test(t.trim())
+async function load() {
+  loading.value = true
+  error.value = ''
+  // Клиент API не бросает исключения, а возвращает Fail — проверяем через isFail.
+  const r = await telegramApi.botInfo()
+  if (isFail(r)) error.value = r.error || 'Не удалось загрузить состояние бота'
+  else info.value = r
+  loading.value = false
 }
 
-function connectBot() {
-  tokenError.value = null
-  if (!isValidToken(tokenInput.value)) {
-    tokenError.value = 'Неверный формат токена. Получите его у @BotFather'
-    return
-  }
-  connecting.value = true
-  // Демо: имитируем обращение к Telegram getMe по токену
-  setTimeout(() => {
-    connecting.value = false
-    bot.value = {
-      ...bot.value,
-      token: tokenInput.value.trim(),
-      connected: true,
-      botUsername: '@coolay_studio_bot',
-      botName: 'Coolay Studio',
-    }
-  }, 1100)
-}
+onMounted(load)
 
-function disconnectBot() {
-  bot.value = { ...bot.value, connected: false, token: '', botUsername: '', botName: '' }
-  tokenInput.value = ''
-}
-
-function copyMiniApp() {
-  if (!bot.value.miniAppUrl) return
-  navigator.clipboard?.writeText(bot.value.miniAppUrl).then(() => {
-    copied.value = true
-    setTimeout(() => (copied.value = false), 1500)
+function copy(text: string, what: 'app' | 'bot') {
+  if (!text) return
+  navigator.clipboard?.writeText(text).then(() => {
+    copied.value = what
+    setTimeout(() => (copied.value = null), 1500)
   })
 }
 
-const maskedToken = computed(() => {
-  const t = bot.value.token
-  if (!t) return ''
-  const [id] = t.split(':')
-  return `${id}:••••••••••••••••`
+/** Подключённые к боту — вверх списка: именно они могут работать. */
+const employees = computed<BotEmployeeInfo[]>(() => {
+  const list = [...(info.value?.employees || [])]
+  return list.sort((a, b) => {
+    if (!!a.telegramId !== !!b.telegramId) return a.telegramId ? -1 : 1
+    return a.fullName.localeCompare(b.fullName, 'ru')
+  })
 })
 
-// --- Сотрудники с доступом через бота ---
-const employees = ref<BotEmployee[]>([...botEmployees])
+const canWork = computed(
+  () => employees.value.filter((e) => e.telegramId && e.canGenerate && e.status !== 'blocked').length,
+)
+const waiting = computed(() => employees.value.filter((e) => !e.telegramId).length)
 
-const showAdd = ref(false)
-const newName = ref('')
-const newPhone = ref('')
-const addError = ref<string | null>(null)
-const checking = ref<string | null>(null) // id проверяемого сотрудника
-
-const statusMeta: Record<BotEmployeeStatus, { label: string; cls: string; dot: string }> = {
-  verified: { label: 'Найден в Telegram', cls: 'bg-green-50 text-green-600', dot: 'bg-green-500' },
-  pending: { label: 'Ожидает проверки', cls: 'bg-amber-50 text-amber-600', dot: 'bg-amber-500' },
-  not_found: { label: 'Не найден', cls: 'bg-red-50 text-red-600', dot: 'bg-red-500' },
+function fmtPhone(p: string) {
+  const d = (p || '').replace(/\D/g, '')
+  if (d.length === 11) return `+${d[0]} ${d.slice(1, 4)} ${d.slice(4, 7)}-${d.slice(7, 9)}-${d.slice(9)}`
+  return p ? '+' + d : '—'
 }
 
-function normalizePhone(p: string) {
-  const digits = p.replace(/\D/g, '')
-  if (digits.length === 11 && (digits[0] === '7' || digits[0] === '8')) {
-    const d = '7' + digits.slice(1)
-    return `+${d[0]} ${d.slice(1, 4)} ${d.slice(4, 7)}-${d.slice(7, 9)}-${d.slice(9, 11)}`
-  }
-  return p.trim()
+function fmtDate(s: string | null) {
+  if (!s) return ''
+  const d = new Date(s)
+  return Number.isNaN(d.getTime())
+    ? ''
+    : d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })
 }
 
-function addEmployee() {
-  addError.value = null
-  if (!newName.value.trim()) {
-    addError.value = 'Укажите ФИО сотрудника'
-    return
-  }
-  const digits = newPhone.value.replace(/\D/g, '')
-  if (digits.length < 10) {
-    addError.value = 'Укажите корректный номер телефона'
-    return
-  }
-  const emp: BotEmployee = {
-    id: 'be' + Date.now(),
-    fullName: newName.value.trim(),
-    phone: normalizePhone(newPhone.value),
-    status: 'pending',
-    canGenerate: false,
-    addedAt: new Date().toISOString(),
-  }
-  employees.value.unshift(emp)
-  // сразу проверяем в боте
-  verifyInBot(emp.id)
-  newName.value = ''
-  newPhone.value = ''
-  showAdd.value = false
+/** Состояние сотрудника одной строкой — без вымышленных «проверок». */
+function state(e: BotEmployeeInfo) {
+  if (e.status === 'blocked')
+    return { label: 'Заблокирован', cls: 'bg-red-50 text-red-600', dot: 'bg-red-500' }
+  if (!e.telegramId)
+    return { label: 'Ещё не открыл бота', cls: 'bg-amber-50 text-amber-700', dot: 'bg-amber-500' }
+  if (!e.canGenerate)
+    return { label: 'Генерации отключены', cls: 'bg-ink-100 text-ink-500', dot: 'bg-ink-400' }
+  return { label: 'Работает в боте', cls: 'bg-green-50 text-green-600', dot: 'bg-green-500' }
 }
-
-// Проверка сотрудника в Telegram по номеру (демо-имитация поиска через бота)
-function verifyInBot(id: string) {
-  const emp = employees.value.find((e) => e.id === id)
-  if (!emp) return
-  checking.value = id
-  emp.status = 'pending'
-  setTimeout(() => {
-    checking.value = null
-    // Демо: считаем, что сотрудник написал боту /start и поделился контактом
-    const found = Math.random() > 0.25
-    if (found) {
-      emp.status = 'verified'
-      emp.telegramId = Math.floor(100000000 + Math.random() * 800000000)
-      emp.telegramUsername = '@' + emp.fullName.split(' ')[0].toLowerCase()
-      emp.canGenerate = true
-    } else {
-      emp.status = 'not_found'
-      emp.canGenerate = false
-    }
-  }, 1400)
-}
-
-function toggleAccess(id: string) {
-  const emp = employees.value.find((e) => e.id === id)
-  if (emp && emp.status === 'verified') emp.canGenerate = !emp.canGenerate
-}
-
-function removeEmployee(id: string) {
-  employees.value = employees.value.filter((e) => e.id !== id)
-}
-
-const verifiedCount = computed(() => employees.value.filter((e) => e.canGenerate).length)
 </script>
 
 <template>
   <div class="space-y-6">
-    <!-- Подключение бота через токен -->
+    <!-- Состояние подключения -->
     <div class="card p-6">
       <div class="flex items-start gap-4">
         <div class="grid place-items-center w-12 h-12 rounded-xl bg-sky-100 text-sky-600 shrink-0">
@@ -153,126 +101,167 @@ const verifiedCount = computed(() => employees.value.filter((e) => e.canGenerate
         <div class="flex-1 min-w-0">
           <div class="flex items-center gap-2 flex-wrap">
             <h3 class="font-extrabold text-ink-900">Telegram-бот</h3>
-            <span v-if="bot.connected" class="chip bg-green-50 text-green-600 text-[10px]">
+            <span
+              v-if="info?.botAvailable && !info?.botStale"
+              class="chip bg-green-50 text-green-600 text-[10px]"
+            >
               <Icon name="check" :size="11" /> Подключён
+            </span>
+            <!-- Бот настроен, но Telegram сейчас недоступен: это сбой связи,
+                 а не отсутствие подключения — так и пишем. -->
+            <span
+              v-else-if="info?.botAvailable"
+              class="chip bg-amber-50 text-amber-700 text-[10px]"
+            >
+              <Icon name="alert" :size="11" /> Нет связи с Telegram
+            </span>
+            <span
+              v-else-if="!loading"
+              class="chip bg-amber-50 text-amber-700 text-[10px]"
+            >
+              Не подключён
             </span>
           </div>
           <p class="text-sm text-ink-400 mt-0.5">
-            Сотрудники создают карточки прямо в Telegram через мини-приложение с теми же инструментами.
+            Сотрудник создаёт карточки прямо в Telegram — по одному товару или сразу пакетом,
+            без входа на сайт.
           </p>
         </div>
       </div>
 
-      <!-- форма токена -->
-      <div v-if="!bot.connected" class="mt-5 space-y-3">
-        <div>
-          <label class="label">Токен бота (BotFather)</label>
-          <div class="flex gap-2">
-            <div class="relative flex-1">
-              <span class="absolute left-3 top-1/2 -translate-y-1/2 text-ink-300"><Icon name="key" :size="16" /></span>
-              <input
-                v-model="tokenInput"
-                type="text"
-                placeholder="123456789:AAH…"
-                class="input pl-9"
-                :class="tokenError ? '!border-red-300' : ''"
-                @input="tokenError = null"
-              />
-            </div>
-            <button class="btn btn-dark btn-md shrink-0" :disabled="connecting" @click="connectBot">
-              <svg v-if="connecting" class="animate-spin" width="18" height="18" viewBox="0 0 24 24" fill="none">
-                <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5" opacity="0.25" />
-                <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
-              </svg>
-              <Icon v-else name="link" :size="18" />
-              {{ connecting ? 'Проверяем…' : 'Подключить' }}
-            </button>
-          </div>
-          <p v-if="tokenError" class="text-xs text-red-500 mt-1.5">{{ tokenError }}</p>
-          <p v-else class="text-xs text-ink-400 mt-1.5">
-            Создайте бота у <span class="font-semibold text-ink-600">@BotFather</span> и вставьте полученный токен.
-          </p>
-        </div>
+      <div v-if="loading" class="mt-5 text-sm text-ink-400 flex items-center gap-2">
+        <Icon name="loader" :size="16" class="animate-spin" /> Загружаем состояние…
       </div>
 
-      <!-- подключённый бот -->
-      <div v-else class="mt-5 space-y-3">
+      <p
+        v-else-if="error"
+        class="mt-5 rounded-xl bg-red-50 border border-red-100 text-red-600 text-sm px-3 py-2.5"
+      >
+        {{ error }}
+      </p>
+
+      <!-- Бот подключён -->
+      <div v-else-if="info?.botAvailable" class="mt-5 space-y-3">
+        <!-- Бот работает, сотрудники им пользуются, но getMe сейчас не прошёл.
+             Показываем это как временный сбой связи и не пугаем «отключением». -->
+        <p
+          v-if="info.botStale"
+          class="rounded-xl bg-amber-50 border border-amber-100 text-amber-800 text-sm px-3.5 py-2.5"
+        >
+          Связь с Telegram сейчас недоступна — данные о боте показаны из последнего
+          успешного запроса. Бот подключён, сотрудники продолжают работать.
+        </p>
         <div class="grid sm:grid-cols-2 gap-3">
           <div class="rounded-xl border border-ink-100 bg-ink-50/60 p-3">
             <p class="text-xs text-ink-400">Бот</p>
-            <p class="font-bold text-ink-900">{{ bot.botName }} <span class="text-ink-400 font-medium">{{ bot.botUsername }}</span></p>
+            <p class="font-bold text-ink-900 truncate">
+              {{ info.bot?.name }}
+              <span class="text-ink-400 font-medium">@{{ info.bot?.username }}</span>
+            </p>
           </div>
           <div class="rounded-xl border border-ink-100 bg-ink-50/60 p-3">
-            <p class="text-xs text-ink-400">Токен</p>
-            <p class="font-mono text-sm text-ink-700 truncate">{{ maskedToken }}</p>
+            <p class="text-xs text-ink-400">Сотрудников работает</p>
+            <p class="font-bold text-ink-900">
+              {{ canWork }}<span class="text-ink-400 font-medium"> из {{ info.total }}</span>
+            </p>
           </div>
         </div>
-        <div class="flex items-center gap-2 rounded-xl border border-ink-100 p-2 pl-3">
-          <Icon name="link" :size="16" class="text-ink-400 shrink-0" />
-          <span class="text-sm text-ink-600 truncate flex-1">{{ bot.miniAppUrl }}</span>
-          <button class="btn btn-outline btn-sm shrink-0" @click="copyMiniApp">
-            <Icon :name="copied ? 'check' : 'copy'" :size="14" /> {{ copied ? 'Скопировано' : 'Мини-апп' }}
+
+        <div
+          v-if="info.botLink"
+          class="flex items-center gap-2 rounded-xl border border-ink-100 p-2 pl-3"
+        >
+          <Icon name="telegram" :size="16" class="text-ink-400 shrink-0" />
+          <span class="text-sm text-ink-600 truncate flex-1">{{ info.botLink }}</span>
+          <button class="btn btn-outline btn-sm shrink-0" @click="copy(info.botLink, 'bot')">
+            <Icon :name="copied === 'bot' ? 'check' : 'copy'" :size="14" />
+            {{ copied === 'bot' ? 'Скопировано' : 'Ссылка' }}
           </button>
         </div>
-        <button class="btn btn-outline btn-sm" @click="disconnectBot">Отключить бота</button>
+
+        <div
+          v-if="info.miniAppUrl"
+          class="flex items-center gap-2 rounded-xl border border-ink-100 p-2 pl-3"
+        >
+          <Icon name="link" :size="16" class="text-ink-400 shrink-0" />
+          <span class="text-sm text-ink-600 truncate flex-1">{{ info.miniAppUrl }}</span>
+          <button class="btn btn-outline btn-sm shrink-0" @click="copy(info.miniAppUrl, 'app')">
+            <Icon :name="copied === 'app' ? 'check' : 'copy'" :size="14" />
+            {{ copied === 'app' ? 'Скопировано' : 'Мини-апп' }}
+          </button>
+        </div>
+
+        <!-- Инструкция: администратору важно понимать, что делать сотруднику,
+             иначе «ещё не открыл бота» выглядит как поломка. -->
+        <div class="rounded-xl bg-sky-50/70 border border-sky-100 p-3.5 text-sm text-ink-600">
+          <p class="font-bold text-ink-900 mb-1.5">Как подключить сотрудника</p>
+          <ol class="space-y-1 list-decimal list-inside">
+            <li>
+              Добавьте его в
+              <RouterLink to="/settings" class="font-semibold text-sky-700 hover:underline">
+                Настройки → Пользователи
+              </RouterLink>
+              с номером телефона, привязанным к его Telegram.
+            </li>
+            <li>Он открывает бота и нажимает «Старт».</li>
+            <li>Бот просит поделиться контактом — сотрудник нажимает кнопку.</li>
+            <li>Номер сверяется с базой, и доступ открывается автоматически.</li>
+          </ol>
+        </div>
+      </div>
+
+      <!-- Бот действительно не подключён: токена нет либо Telegram его отклонил.
+           Причины разные, и лечатся они по-разному, поэтому не сваливаем их в
+           одну формулировку. -->
+      <div v-else class="mt-5">
+        <p
+          class="rounded-xl bg-amber-50 border border-amber-100 text-amber-800 text-sm px-3.5 py-3"
+        >
+          <template v-if="info?.configured">
+            <span class="font-bold">Telegram отклонил токен бота.</span>
+            Скорее всего токен отозвали или заменили в @BotFather. Обратитесь в поддержку Coolay —
+            нужно прописать актуальный токен на сервере.
+          </template>
+          <template v-else>
+            <span class="font-bold">Бот не подключён.</span>
+            Токен бота хранится в настройках сервера и не вводится через браузер — так он не
+            попадёт ни в историю запросов, ни в расширения. Обратитесь в поддержку Coolay, чтобы
+            подключить бота вашей компании.
+          </template>
+        </p>
       </div>
     </div>
 
-    <!-- Сотрудники с доступом к генерациям через бота -->
-    <div class="card p-6">
+    <!-- Сотрудники -->
+    <div v-if="!loading && !error" class="card p-6">
       <div class="flex items-center justify-between gap-3 flex-wrap">
         <div>
-          <h3 class="font-extrabold text-ink-900">Сотрудники с доступом через бота</h3>
+          <h3 class="font-extrabold text-ink-900">Сотрудники в боте</h3>
           <p class="text-sm text-ink-400 mt-0.5">
-            Добавьте ФИО и номер телефона — мы проверим сотрудника в боте по номеру и выдадим доступ к генерациям.
+            Список тот же, что в «Настройках» — здесь видно, кто уже дошёл до бота.
           </p>
         </div>
-        <button
-          class="btn btn-dark btn-sm shrink-0"
-          :disabled="!bot.connected"
-          :title="bot.connected ? '' : 'Сначала подключите бота'"
-          @click="showAdd = !showAdd"
-        >
+        <RouterLink to="/settings" class="btn btn-dark btn-sm shrink-0">
           <Icon name="userPlus" :size="16" /> Добавить сотрудника
-        </button>
+        </RouterLink>
       </div>
 
-      <p v-if="!bot.connected" class="mt-4 rounded-xl bg-amber-50 border border-amber-100 text-amber-700 text-sm px-3 py-2.5">
-        Подключите Telegram-бота выше, чтобы добавлять сотрудников и проверять их по номеру.
-      </p>
-
-      <!-- форма добавления -->
-      <div v-if="showAdd && bot.connected" class="mt-4 rounded-xl border border-ink-200 p-4 space-y-3 bg-ink-50/40">
-        <div class="grid sm:grid-cols-2 gap-3">
-          <div>
-            <label class="label">ФИО</label>
-            <input v-model="newName" type="text" placeholder="Иванов Иван Иванович" class="input" @input="addError = null" />
-          </div>
-          <div>
-            <label class="label">Телефон (как в Telegram)</label>
-            <div class="relative">
-              <span class="absolute left-3 top-1/2 -translate-y-1/2 text-ink-300"><Icon name="phone" :size="16" /></span>
-              <input v-model="newPhone" type="tel" placeholder="+7 999 123-45-67" class="input pl-9" @input="addError = null" />
-            </div>
-          </div>
-        </div>
-        <p v-if="addError" class="text-xs text-red-500">{{ addError }}</p>
-        <div class="flex gap-2">
-          <button class="btn btn-dark btn-sm" @click="addEmployee"><Icon name="check" :size="15" /> Добавить и проверить</button>
-          <button class="btn btn-outline btn-sm" @click="showAdd = false">Отмена</button>
-        </div>
-      </div>
-
-      <!-- список -->
       <div v-if="employees.length" class="mt-4 -mx-2 overflow-x-auto">
-        <table class="w-full text-sm min-w-[640px]">
+        <table class="w-full text-sm min-w-[620px]">
           <thead>
             <tr class="border-b border-ink-100 text-left">
-              <th class="font-bold text-ink-500 text-xs uppercase tracking-wide px-2 py-2.5">Сотрудник</th>
-              <th class="font-bold text-ink-500 text-xs uppercase tracking-wide px-2 py-2.5">Телефон</th>
-              <th class="font-bold text-ink-500 text-xs uppercase tracking-wide px-2 py-2.5">Проверка в боте</th>
-              <th class="font-bold text-ink-500 text-xs uppercase tracking-wide px-2 py-2.5">Генерации</th>
-              <th class="px-2 py-2.5"></th>
+              <th class="font-bold text-ink-500 text-xs uppercase tracking-wide px-2 py-2.5">
+                Сотрудник
+              </th>
+              <th class="font-bold text-ink-500 text-xs uppercase tracking-wide px-2 py-2.5">
+                Телефон
+              </th>
+              <th class="font-bold text-ink-500 text-xs uppercase tracking-wide px-2 py-2.5">
+                Состояние
+              </th>
+              <th class="font-bold text-ink-500 text-xs uppercase tracking-wide px-2 py-2.5">
+                Подключён
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -282,55 +271,41 @@ const verifiedCount = computed(() => employees.value.filter((e) => e.canGenerate
                   <Avatar :name="e.fullName" :size="32" />
                   <div class="min-w-0">
                     <p class="font-semibold text-ink-900 truncate">{{ e.fullName }}</p>
-                    <p v-if="e.telegramUsername" class="text-xs text-sky-600">{{ e.telegramUsername }}</p>
+                    <p v-if="e.telegramUsername" class="text-xs text-sky-600">
+                      @{{ e.telegramUsername }}
+                    </p>
                   </div>
                 </div>
               </td>
-              <td class="px-2 py-3 whitespace-nowrap text-ink-600">{{ e.phone }}</td>
+              <td class="px-2 py-3 whitespace-nowrap text-ink-600">{{ fmtPhone(e.phone) }}</td>
               <td class="px-2 py-3">
-                <span v-if="checking === e.id" class="inline-flex items-center gap-2 text-ink-500 text-xs">
-                  <svg class="animate-spin" width="14" height="14" viewBox="0 0 24 24" fill="none">
-                    <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5" opacity="0.25" />
-                    <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
-                  </svg>
-                  Проверяем по номеру…
-                </span>
-                <span v-else class="chip whitespace-nowrap" :class="statusMeta[e.status].cls">
-                  <span class="w-1.5 h-1.5 rounded-full" :class="statusMeta[e.status].dot" />
-                  {{ statusMeta[e.status].label }}
+                <span class="chip whitespace-nowrap" :class="state(e).cls">
+                  <span class="w-1.5 h-1.5 rounded-full" :class="state(e).dot" />
+                  {{ state(e).label }}
                 </span>
               </td>
-              <td class="px-2 py-3">
-                <label v-if="e.status === 'verified'" class="inline-flex items-center cursor-pointer select-none">
-                  <span class="relative inline-block">
-                    <input :checked="e.canGenerate" type="checkbox" class="peer sr-only" @change="toggleAccess(e.id)" />
-                    <span class="block w-10 h-5.5 rounded-full bg-ink-200 peer-checked:bg-accent transition" style="height:1.375rem" />
-                    <span class="absolute top-0.5 left-0.5 w-4.5 h-4.5 rounded-full bg-white shadow peer-checked:translate-x-[18px] transition" style="width:1.125rem;height:1.125rem" />
-                  </span>
-                </label>
-                <button
-                  v-else-if="e.status === 'not_found'"
-                  class="btn btn-outline btn-sm h-7 text-xs"
-                  @click="verifyInBot(e.id)"
-                >
-                  <Icon name="refresh" :size="13" /> Повторить
-                </button>
-                <span v-else class="text-xs text-ink-400">—</span>
-              </td>
-              <td class="px-2 py-3 text-right">
-                <button class="grid place-items-center w-8 h-8 rounded-lg text-ink-400 hover:bg-red-50 hover:text-red-600 ml-auto" title="Удалить" @click="removeEmployee(e.id)">
-                  <Icon name="trash" :size="16" />
-                </button>
+              <td class="px-2 py-3 whitespace-nowrap text-ink-500 text-xs">
+                {{ fmtDate(e.botVerifiedAt) || '—' }}
               </td>
             </tr>
           </tbody>
         </table>
       </div>
 
-      <div v-else class="mt-4 text-center py-8 text-ink-400 text-sm">Сотрудники ещё не добавлены</div>
+      <div v-else class="mt-4 text-center py-8 px-6">
+        <p class="font-bold text-ink-900">Сотрудников пока нет</p>
+        <p class="text-sm text-ink-400 mt-1 max-w-md mx-auto">
+          Добавьте сотрудника с номером телефона — и он сможет создавать карточки в Telegram,
+          без пароля и входа на сайт.
+        </p>
+        <RouterLink to="/settings" class="btn btn-accent btn-md mt-4">
+          <Icon name="userPlus" :size="18" /> Перейти в Настройки
+        </RouterLink>
+      </div>
 
-      <p v-if="employees.length" class="text-xs text-ink-400 mt-3">
-        Доступ к генерациям через бота имеют: <span class="font-bold text-ink-700">{{ verifiedCount }}</span>
+      <p v-if="waiting" class="text-xs text-ink-400 mt-3">
+        Ждут первого входа в бота: <span class="font-bold text-ink-700">{{ waiting }}</span> —
+        им нужно открыть бота и поделиться контактом.
       </p>
     </div>
   </div>

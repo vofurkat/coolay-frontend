@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted, watch, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { authApi } from '@/data/platformApi'
 import Logo from '@/components/ui/Logo.vue'
 import Icon from '@/components/ui/Icon.vue'
 
@@ -9,25 +10,99 @@ const auth = useAuthStore()
 const router = useRouter()
 const route = useRoute()
 
-const login = ref('admin')
-const password = ref('admin')
+const mode = ref<'login' | 'register'>('login')
+
+const email = ref('')
+const password = ref('')
+const company = ref('')
+const name = ref('')
 const showPassword = ref(false)
-const remember = ref(true)
 const loading = ref(false)
 const error = ref('')
+
+const googleClientId = ref('')
+const googleBtn = ref<HTMLElement | null>(null)
+
+function goNext() {
+  const redirect = (route.query.redirect as string) || '/'
+  router.push(redirect)
+}
 
 async function submit() {
   error.value = ''
   loading.value = true
-  const res = await auth.login(login.value, password.value)
+  const res =
+    mode.value === 'login'
+      ? await auth.login(email.value, password.value)
+      : await auth.register({
+          company: company.value,
+          name: name.value,
+          email: email.value,
+          password: password.value,
+        })
   loading.value = false
-  if (res.ok) {
-    const redirect = (route.query.redirect as string) || '/'
-    router.push(redirect)
-  } else {
-    error.value = res.error || 'Ошибка входа'
+  if (res.ok) goNext()
+  else error.value = res.error || 'Ошибка'
+}
+
+/* ── Google Identity Services ──
+ * Скрипт грузим лениво и только если сервер настроен (есть GOOGLE_CLIENT_ID):
+ * без него кнопка не показывается вовсе — нерабочая кнопка хуже её отсутствия. */
+declare global {
+  interface Window {
+    google?: {
+      accounts: {
+        id: {
+          initialize: (cfg: { client_id: string; callback: (r: { credential: string }) => void }) => void
+          renderButton: (el: HTMLElement, cfg: Record<string, unknown>) => void
+        }
+      }
+    }
   }
 }
+
+function renderGoogle() {
+  if (!googleClientId.value || !window.google || !googleBtn.value) return
+  window.google.accounts.id.initialize({
+    client_id: googleClientId.value,
+    callback: async (resp) => {
+      error.value = ''
+      loading.value = true
+      const res = await auth.loginWithGoogle(resp.credential)
+      loading.value = false
+      if (res.ok) goNext()
+      else error.value = res.error || 'Ошибка входа через Google'
+    },
+  })
+  window.google.accounts.id.renderButton(googleBtn.value, {
+    theme: 'outline',
+    size: 'large',
+    width: 400,
+    text: 'continue_with',
+  })
+}
+
+onMounted(async () => {
+  const cfg = await authApi.loginConfig()
+  googleClientId.value = cfg.googleClientId
+  if (!googleClientId.value) return
+  if (window.google) {
+    renderGoogle()
+    return
+  }
+  const s = document.createElement('script')
+  s.src = 'https://accounts.google.com/gsi/client'
+  s.async = true
+  s.onload = renderGoogle
+  document.head.appendChild(s)
+})
+
+// При переключении вкладок контейнер кнопки Google пересоздаётся — рендерим заново.
+watch(mode, async () => {
+  error.value = ''
+  await nextTick()
+  renderGoogle()
+})
 
 const features = [
   { icon: 'scissors', text: 'Удаление фона за секунды' },
@@ -41,17 +116,14 @@ const features = [
   <div class="min-h-screen w-full flex bg-white">
     <!-- Left brand panel -->
     <div class="hidden lg:flex w-[46%] relative bg-ink-900 overflow-hidden">
-      <!-- decorative -->
       <div class="absolute -top-24 -right-24 w-96 h-96 rounded-full bg-accent/20 blur-3xl" />
       <div class="absolute bottom-0 -left-20 w-80 h-80 rounded-full bg-accent/10 blur-3xl" />
       <div
         class="absolute inset-0 opacity-[0.05]"
         style="background-image: radial-gradient(#fff 1px, transparent 1px); background-size: 28px 28px"
       />
-
       <div class="relative z-10 flex flex-col justify-between p-12 w-full">
         <Logo dark />
-
         <div class="space-y-8">
           <div>
             <div class="chip bg-accent text-ink-900 mb-5">
@@ -66,7 +138,6 @@ const features = [
               Подключи свою ERP-систему и генерируй фото, фоны и модели на AI — прямо из каталога.
             </p>
           </div>
-
           <ul class="space-y-3">
             <li v-for="f in features" :key="f.text" class="flex items-center gap-3 text-white/80">
               <span class="grid place-items-center w-9 h-9 rounded-lg bg-white/[0.06] text-accent shrink-0">
@@ -76,7 +147,6 @@ const features = [
             </li>
           </ul>
         </div>
-
         <p class="text-white/30 text-xs">© 2026 Coolay Studio. Все права защищены.</p>
       </div>
     </div>
@@ -88,15 +158,66 @@ const features = [
           <Logo />
         </div>
 
-        <h2 class="text-3xl font-extrabold text-ink-900">С возвращением</h2>
-        <p class="text-ink-400 mt-2 mb-8">Войдите в аккаунт, чтобы продолжить работу</p>
+        <h2 class="text-3xl font-extrabold text-ink-900">
+          {{ mode === 'login' ? 'С возвращением' : 'Создайте аккаунт' }}
+        </h2>
+        <p class="text-ink-400 mt-2 mb-6">
+          {{
+            mode === 'login'
+              ? 'Войдите в аккаунт, чтобы продолжить работу'
+              : 'Бесплатный тариф — 50 кредит-токенов на старт'
+          }}
+        </p>
 
-        <form @submit.prevent="submit" class="space-y-5">
-          <div>
-            <label class="label">Логин</label>
+        <!-- Tabs -->
+        <div class="grid grid-cols-2 gap-1 p-1 rounded-xl bg-ink-50 mb-6">
+          <button
+            type="button"
+            class="py-2 rounded-lg text-sm font-bold transition"
+            :class="mode === 'login' ? 'bg-white text-ink-900 shadow-sm' : 'text-ink-400 hover:text-ink-700'"
+            @click="mode = 'login'"
+          >
+            Вход
+          </button>
+          <button
+            type="button"
+            class="py-2 rounded-lg text-sm font-bold transition"
+            :class="mode === 'register' ? 'bg-white text-ink-900 shadow-sm' : 'text-ink-400 hover:text-ink-700'"
+            @click="mode = 'register'"
+          >
+            Регистрация
+          </button>
+        </div>
+
+        <form @submit.prevent="submit" class="space-y-4">
+          <div v-if="mode === 'register'">
+            <label class="label">Название компании</label>
+            <div class="relative">
+              <Icon name="store" :size="18" class="absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-400" />
+              <input v-model="company" type="text" class="input pl-11" placeholder="Например: Modano Shop" required />
+            </div>
+          </div>
+
+          <div v-if="mode === 'register'">
+            <label class="label">Ваше имя</label>
             <div class="relative">
               <Icon name="user" :size="18" class="absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-400" />
-              <input v-model="login" type="text" class="input pl-11" placeholder="Введите логин" autocomplete="username" />
+              <input v-model="name" type="text" class="input pl-11" placeholder="Как к вам обращаться" />
+            </div>
+          </div>
+
+          <div>
+            <label class="label">Email</label>
+            <div class="relative">
+              <Icon name="mail" :size="18" class="absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-400" />
+              <input
+                v-model="email"
+                type="email"
+                class="input pl-11"
+                placeholder="you@company.com"
+                autocomplete="username"
+                required
+              />
             </div>
           </div>
 
@@ -108,8 +229,10 @@ const features = [
                 v-model="password"
                 :type="showPassword ? 'text' : 'password'"
                 class="input pl-11 pr-11"
-                placeholder="Введите пароль"
-                autocomplete="current-password"
+                :placeholder="mode === 'register' ? 'Минимум 8 символов' : 'Введите пароль'"
+                :autocomplete="mode === 'register' ? 'new-password' : 'current-password'"
+                required
+                :minlength="mode === 'register' ? 8 : undefined"
               />
               <button
                 type="button"
@@ -119,19 +242,6 @@ const features = [
                 <Icon :name="showPassword ? 'eyeOff' : 'eye'" :size="18" />
               </button>
             </div>
-          </div>
-
-          <div class="flex items-center justify-between">
-            <label class="flex items-center gap-2 cursor-pointer select-none">
-              <input v-model="remember" type="checkbox" class="peer sr-only" />
-              <span
-                class="w-5 h-5 rounded-md border-2 border-ink-200 grid place-items-center peer-checked:bg-accent peer-checked:border-accent transition"
-              >
-                <Icon v-if="remember" name="check" :size="14" class="text-ink-900" />
-              </span>
-              <span class="text-sm text-ink-600 font-medium">Запомнить меня</span>
-            </label>
-            <a href="#" class="text-sm font-semibold text-ink-900 hover:text-accent-600">Забыли пароль?</a>
           </div>
 
           <transition name="shake">
@@ -145,14 +255,37 @@ const features = [
               <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5" opacity="0.25" />
               <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
             </svg>
-            <span>{{ loading ? 'Входим…' : 'Войти' }}</span>
+            <span>
+              {{ loading ? 'Секунду…' : mode === 'login' ? 'Войти' : 'Создать аккаунт' }}
+            </span>
             <Icon v-if="!loading" name="chevronRight" :size="18" />
           </button>
         </form>
 
-        <div class="mt-6 rounded-xl bg-ink-50 border border-ink-100 px-4 py-3 text-xs text-ink-500">
-          <span class="font-semibold text-ink-700">Демо-доступ:</span> логин <code class="text-ink-900 font-bold">admin</code> · пароль <code class="text-ink-900 font-bold">admin</code>
-        </div>
+        <!-- Google Sign-In: показывается только если сервер настроен -->
+        <template v-if="googleClientId">
+          <div class="flex items-center gap-3 my-5">
+            <div class="h-px flex-1 bg-ink-100" />
+            <span class="text-xs text-ink-400 font-medium">или</span>
+            <div class="h-px flex-1 bg-ink-100" />
+          </div>
+          <div ref="googleBtn" class="flex justify-center" />
+        </template>
+
+        <p class="mt-6 text-center text-sm text-ink-400">
+          <template v-if="mode === 'login'">
+            Нет аккаунта?
+            <button type="button" class="font-bold text-ink-900 hover:text-accent-600" @click="mode = 'register'">
+              Зарегистрируйтесь
+            </button>
+          </template>
+          <template v-else>
+            Уже есть аккаунт?
+            <button type="button" class="font-bold text-ink-900 hover:text-accent-600" @click="mode = 'login'">
+              Войти
+            </button>
+          </template>
+        </p>
       </div>
     </div>
   </div>

@@ -1,12 +1,31 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 
-const section = (path: string, name: string, title: string, description: string, icon: string) => ({
-  path,
-  name,
-  component: () => import('@/views/SectionView.vue'),
-  meta: { title, description, icon },
-})
+/**
+ * SectionView (страница-заглушка «раздел в разработке») больше не используется:
+ * /templates и /projects/shared получили настоящие экраны. Хелпер section()
+ * удалён вместе с ними — он маскировал отсутствие функциональности, а держать
+ * его «на будущее» значит рисковать, что новый раздел снова выйдет заглушкой.
+ */
+
+/**
+ * Разделы, скрытые по запросу заказчика.
+ * Маршруты удалены, но прямые ссылки (закладки, история браузера, внешние
+ * ссылки) не должны приводить в пустоту — beforeEach уводит их на главную.
+ * Чтобы вернуть раздел: убрать путь отсюда и добавить обычный маршрут.
+ */
+const HIDDEN_PATHS = [
+  '/studios/photo',
+  '/studios/fashion',
+  '/studios/catalog',
+  '/studios/marketplaces',
+  '/media',
+  '/projects/shared',
+]
+
+function isHidden(path: string) {
+  return HIDDEN_PATHS.some((p) => path === p || path.startsWith(p + '/'))
+}
 
 const router = createRouter({
   history: createWebHistory(),
@@ -16,6 +35,20 @@ const router = createRouter({
       name: 'login',
       component: () => import('@/views/LoginView.vue'),
       meta: { public: true, title: 'Вход' },
+    },
+    /*
+     * Mini App внутри Telegram.
+     * public: true и вне AppLayout — намеренно. Авторизация здесь идёт по
+     * initData Telegram, а не по cookie-сессии: у сотрудника может вообще не
+     * быть учётной записи на сайте. Если пустить этот маршрут через общий
+     * guard, бот получал бы редирект на /login и работать бы не смог.
+     * Сайдбар и топбар тоже не нужны — это узкий экран телефона.
+     */
+    {
+      path: '/tg',
+      name: 'telegram-miniapp',
+      component: () => import('@/views/TelegramMiniAppView.vue'),
+      meta: { public: true, title: 'Coolay в Telegram' },
     },
     {
       path: '/',
@@ -32,41 +65,57 @@ const router = createRouter({
           },
         },
         // AI-студии
-        section(
-          'studios/product-cards',
-          'studio-product-cards',
-          'Карточки товара',
-          'Создание и улучшение товарных карточек: фото, название, описание, характеристики, SEO.',
-          'card',
-        ),
-        section(
-          'studios/photo',
-          'studio-photo',
-          'Фото-студия',
-          'Подготовка продающих фото товара: фон, свет, ракурс и качество.',
-          'camera',
-        ),
-        section(
-          'studios/fashion',
-          'studio-fashion',
-          'Fashion-студия',
-          'Работа с одеждой и fashion-каталогом: модель, посадка, образ, ткань и ракурс.',
-          'shirt',
-        ),
-        section(
-          'studios/catalog',
-          'studio-catalog',
-          'Каталог-студия',
-          'Массовая работа с ассортиментом: десятки и сотни SKU в одном потоке.',
-          'layers',
-        ),
-        section(
-          'studios/marketplaces',
-          'studio-marketplaces',
-          'Маркетплейсы',
-          'Адаптация фото и карточек под Wildberries, Ozon, Shopify и другие площадки.',
-          'shoppingBag',
-        ),
+        {
+          path: 'studios/product-cards',
+          name: 'studio-product-cards',
+          component: () => import('@/views/studios/ProductCardsStudioView.vue'),
+          meta: {
+            title: 'Карточки товара',
+            description:
+              'Создание и улучшение товарных карточек: фото, название, описание, характеристики, SEO.',
+            icon: 'card',
+          },
+        },
+        {
+          path: 'studios/product-cards/new',
+          name: 'studio-product-cards-new',
+          component: () => import('@/views/studios/ProductCardWizardView.vue'),
+          meta: {
+            title: 'Создание карточки товара',
+            description: 'AI создаёт карточку с описанием, характеристиками, SEO и изображениями.',
+            icon: 'card',
+          },
+        },
+        {
+          path: 'studios/product-cards/history',
+          name: 'studio-product-cards-history',
+          component: () => import('@/views/studios/ProductCardsHistoryView.vue'),
+          meta: {
+            title: 'История карточек товара',
+            description: 'Все созданные SKU-карточки: поиск, фильтры и быстрый переход.',
+            icon: 'card',
+          },
+        },
+        {
+          path: 'studios/product-cards/:id',
+          name: 'studio-product-card',
+          component: () => import('@/views/studios/ProductCardDetailView.vue'),
+          meta: { title: 'Карточка товара', icon: 'card' },
+        },
+        // Пакетная генерация: до 10 разных товаров одним заданием.
+        // Раздел был в HIDDEN_PATHS как заглушка — открыт после появления
+        // настоящего оркестратора заданий (backend/skujobs.js).
+        {
+          path: 'batch',
+          name: 'batch',
+          component: () => import('@/views/BatchGenerateView.vue'),
+          meta: {
+            title: 'Пакетная генерация',
+            description:
+              'Загрузите до 10 разных товаров — карточки создаются одним заданием параллельно.',
+            icon: 'layers',
+          },
+        },
         // Инструменты
         {
           path: 'tools',
@@ -83,48 +132,57 @@ const router = createRouter({
           component: () => import('@/views/ToolWorkspaceView.vue'),
           meta: { title: 'Инструмент' },
         },
-        section(
-          'batch',
-          'batch',
-          'Пакетная обработка',
-          'Массовая обработка файлов — быстрый сценарий для больших объёмов.',
-          'layers',
-        ),
-        section(
-          'templates',
-          'templates',
-          'Шаблоны',
-          'Готовые форматы и пресеты, чтобы не настраивать одно и то же каждый раз.',
-          'layout',
-        ),
-        section(
-          'media',
-          'media',
-          'Медиа библиотека',
-          'Хранилище изображений, фонов, моделей, карточек и результатов генераций.',
-          'folder',
-        ),
-        // Проекты
-        section(
-          'projects',
-          'projects',
-          'Мои проекты',
-          'Личное рабочее пространство: товары, изображения, карточки и история работы.',
-          'folder',
-        ),
-        section(
-          'projects/shared',
-          'projects-shared',
-          'Общие со мной',
-          'Проекты, которыми с вами поделились — совместная работа команды.',
-          'folderShared',
-        ),
+        {
+          path: 'templates',
+          name: 'templates',
+          component: () => import('@/views/TemplatesView.vue'),
+          meta: {
+            title: 'Шаблоны',
+            description:
+              'Референсы и промты по категориям товара — подставляются при генерации карточки.',
+            icon: 'layout',
+          },
+        },
+
+        // Проекты — здесь хранятся сгенерированные SKU-карточки
+        {
+          path: 'projects',
+          name: 'projects',
+          component: () => import('@/views/ProjectsView.vue'),
+          meta: {
+            title: 'Мои проекты',
+            description:
+              'Рабочее пространство: сгенерированные карточки товаров, статусы и история работы.',
+            icon: 'folder',
+          },
+        },
+        {
+          path: 'projects/shared',
+          name: 'projects-shared',
+          component: () => import('@/views/SharedProjectsView.vue'),
+          meta: {
+            title: 'Общие со мной',
+            description:
+              'Проекты, которыми с вами поделились — совместная работа команды.',
+            icon: 'folderShared',
+          },
+        },
         // Служебные (доступ из топбара / настроек)
         {
           path: 'history',
           name: 'history',
           component: () => import('@/views/HistoryView.vue'),
           meta: { title: 'История' },
+        },
+        {
+          path: 'usage',
+          name: 'usage',
+          component: () => import('@/views/UsageLogView.vue'),
+          meta: {
+            title: 'Журнал списаний',
+            description: 'История трат кредит-токенов по операциям.',
+            icon: 'bolt',
+          },
         },
         {
           path: 'integrations',
@@ -140,6 +198,69 @@ const router = createRouter({
         },
       ],
     },
+    // Супер-админка платформы — отдельный контур авторизации (cookie админа),
+    // клиентский гард её не касается (meta.sadmin).
+    {
+      path: '/sadmin/login',
+      name: 'sadmin-login',
+      component: () => import('@/views/sadmin/SadminLoginView.vue'),
+      meta: { public: true, sadmin: true, title: 'Вход в админку' },
+    },
+    {
+      path: '/sadmin',
+      component: () => import('@/layouts/SadminLayout.vue'),
+      meta: { sadmin: true },
+      children: [
+        {
+          path: '',
+          name: 'sadmin-dashboard',
+          component: () => import('@/views/sadmin/SadminDashboardView.vue'),
+          meta: { sadmin: true, title: 'Админка · Обзор' },
+        },
+        {
+          path: 'clients',
+          name: 'sadmin-clients',
+          component: () => import('@/views/sadmin/SadminClientsView.vue'),
+          meta: { sadmin: true, title: 'Админка · Клиенты' },
+        },
+        {
+          path: 'clients/:id',
+          name: 'sadmin-client',
+          component: () => import('@/views/sadmin/SadminClientDetailView.vue'),
+          meta: { sadmin: true, title: 'Админка · Клиент' },
+        },
+        {
+          path: 'plans',
+          name: 'sadmin-plans',
+          component: () => import('@/views/sadmin/SadminPlansView.vue'),
+          meta: { sadmin: true, title: 'Админка · Тарифы' },
+        },
+        {
+          path: 'usage',
+          name: 'sadmin-usage',
+          component: () => import('@/views/sadmin/SadminUsageView.vue'),
+          meta: { sadmin: true, title: 'Админка · Списания' },
+        },
+        {
+          path: 'templates',
+          name: 'sadmin-templates',
+          component: () => import('@/views/sadmin/SadminTemplatesView.vue'),
+          meta: { sadmin: true, title: 'Админка · Системные шаблоны' },
+        },
+        {
+          path: 'admins',
+          name: 'sadmin-admins',
+          component: () => import('@/views/sadmin/SadminAdminsView.vue'),
+          meta: { sadmin: true, title: 'Админка · Администраторы' },
+        },
+        {
+          path: 'log',
+          name: 'sadmin-log',
+          component: () => import('@/views/sadmin/SadminLogView.vue'),
+          meta: { sadmin: true, title: 'Админка · Журнал' },
+        },
+      ],
+    },
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],
   scrollBehavior() {
@@ -147,14 +268,29 @@ const router = createRouter({
   },
 })
 
-router.beforeEach((to) => {
+router.beforeEach(async (to) => {
+  // Админка живёт на своём контуре: проверку сессии делает SadminLayout
+  // (свой cookie, свой /api/sadmin/auth/me) — клиентский гард её пропускает.
+  if (to.meta.sadmin) {
+    document.title = to.meta.title ? `${to.meta.title} · Coolay` : 'Coolay Admin'
+    return
+  }
+
   const auth = useAuthStore()
-  if (!auth.isAuthenticated) auth.restore()
+  // Сессия в httpOnly cookie — узнать о ней можно только запросом к серверу.
+  // Ждём первую проверку, иначе залогиненного пользователя при F5
+  // выкинет на /login до того, как ответит /api/auth/me.
+  if (!auth.checked) await auth.restore()
 
   if (!to.meta.public && !auth.isAuthenticated) {
     return { name: 'login', query: { redirect: to.fullPath } }
   }
   if (to.name === 'login' && auth.isAuthenticated) {
+    return { name: 'home' }
+  }
+  // Скрытые разделы: уводим на главную явно, не полагаясь на catch-all —
+  // иначе такой путь мог бы осесть в ?redirect= и вернуть пользователя в никуда.
+  if (isHidden(to.path)) {
     return { name: 'home' }
   }
   document.title = to.meta.title ? `${to.meta.title} · Coolay Studio` : 'Coolay Studio'

@@ -1,15 +1,118 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import Icon from '@/components/ui/Icon.vue'
-import {
-  dashboardStats,
-  homeScenarios,
-  homeProjects,
-  homeActivity,
-} from '@/data/mock'
+import { homeScenarios } from '@/data/mock'
+import { isFail, teamApi, type ActivityItem, type UsageState } from '@/data/platformApi'
+import { useProductCardsStore } from '@/stores/productCards'
 
 const router = useRouter()
+const cardsStore = useProductCardsStore()
+
+/*
+ * СТАТИСТИКА СЧИТАЕТСЯ ПО ФАКТУ, а не берётся из демо-набора.
+ *
+ * Раньше плитки показывали красивые, но выдуманные числа (12 458 генераций,
+ * 3 256 товаров, «↑18% за неделю»). На демо это выглядело солидно, а в работе
+ * вводило в заблуждение: цифры не менялись после генерации, и по ним нельзя
+ * было понять ни расход кредитов, ни реальный объём каталога.
+ */
+const usage = ref<UsageState | null>(null)
+const activity = ref<ActivityItem[]>([])
+
+onMounted(async () => {
+  const [u, a] = await Promise.all([teamApi.usage(), teamApi.activity(8)])
+  // Клиент API не бросает исключения, а возвращает Fail — молча пропускаем:
+  // дашборд не должен падать целиком из-за одной плитки.
+  if (!isFail(u)) usage.value = u.usage
+  if (!isFail(a)) activity.value = a.activity
+})
+
+/** Кадры, реально сгенерированные во всех карточках. */
+const framesDone = computed(() =>
+  cardsStore.cards.reduce(
+    (sum, c) => sum + (c.images || []).filter((i) => i.state === 'success' && i.url).length,
+    0,
+  ),
+)
+
+const cardsTotal = computed(() => cardsStore.cards.length)
+
+/** Карточки, созданные за последние 7 дней — вместо вымышленного тренда. */
+const cardsThisWeek = computed(() => {
+  const weekAgo = Date.now() - 7 * 86400000
+  return cardsStore.cards.filter((c) => Date.parse(c.createdAt || '') >= weekAgo).length
+})
+
+const creditsLeft = computed(() => usage.value?.left ?? 0)
+const creditsLimit = computed(() => usage.value?.limit ?? 0)
+
+/**
+ * Вид события в журнале. Типы приходят с сервера (team.js, telegram.js);
+ * для незнакомого типа берём нейтральное оформление, чтобы новое событие
+ * на бэкенде не приводило к пустой иконке в интерфейсе.
+ */
+const activityLook: Record<string, { icon: string; tone: string }> = {
+  card_created: { icon: 'card', tone: 'bg-emerald-50 text-emerald-700' },
+  project_created: { icon: 'folder', tone: 'bg-brand-50 text-brand-700' },
+  project_updated: { icon: 'edit', tone: 'bg-sky-50 text-sky-700' },
+  employee_added: { icon: 'userPlus', tone: 'bg-amber-50 text-amber-700' },
+  bot_login: { icon: 'send', tone: 'bg-sky-50 text-sky-700' },
+  web_app: { icon: 'send', tone: 'bg-sky-50 text-sky-700' },
+  access_granted: { icon: 'unlock', tone: 'bg-emerald-50 text-emerald-700' },
+  access_revoked: { icon: 'ban', tone: 'bg-red-50 text-red-600' },
+  claimed: { icon: 'user', tone: 'bg-ink-100 text-ink-600' },
+  released: { icon: 'user', tone: 'bg-ink-100 text-ink-600' },
+}
+
+function look(type: string) {
+  return activityLook[type] || { icon: 'sparkles', tone: 'bg-ink-100 text-ink-600' }
+}
+
+/** Время события: «сегодня, 11:24» — привычнее, чем полная дата. */
+function fmtActivityTime(iso: string) {
+  const t = Date.parse(iso)
+  if (!Number.isFinite(t)) return ''
+  const d = new Date(t)
+  const time = d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+  const days = Math.floor((Date.now() - t) / 86400000)
+  if (days <= 0) return `Сегодня, ${time}`
+  if (days === 1) return `Вчера, ${time}`
+  return `${d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}, ${time}`
+}
+
+/*
+ * «Недавние проекты» показывают РЕАЛЬНО созданные карточки вместо прежней
+ * заглушки: на демо-данных блок вводил в заблуждение — выглядел как история
+ * работы, но не менялся после генерации и вёл на общий список.
+ */
+onMounted(() => {
+  void cardsStore.restore()
+})
+
+/** Дата в человеческом виде: «сегодня», «вчера», иначе короткая дата. */
+function fmtWhen(iso: string) {
+  const t = Date.parse(iso)
+  if (!Number.isFinite(t)) return ''
+  const days = Math.floor((Date.now() - t) / 86400000)
+  if (days <= 0) return 'сегодня'
+  if (days === 1) return 'вчера'
+  if (days < 7) return `${days} дн. назад`
+  return new Date(t).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })
+}
+
+const recentProjects = computed(() =>
+  cardsStore.recentCards.slice(0, 4).map((c) => ({
+    id: c.id,
+    title: c.content?.ru?.name || c.analysis?.title || c.sku,
+    // Показываем готовый кадр, а не исходное фото: пользователь узнаёт
+    // карточку по результату генерации.
+    thumbnail: c.images?.find((i) => i.state === 'success' && i.url)?.url || c.sourceImage || '',
+    type: c.analysis?.productType || 'Карточка товара',
+    updatedAt: fmtWhen(c.updatedAt || c.createdAt),
+    to: `/studios/product-cards/${c.id}`,
+  })),
+)
 const assistantOpen = ref(false)
 
 const toneBg: Record<string, string> = {
@@ -17,7 +120,7 @@ const toneBg: Record<string, string> = {
   sky: 'from-sky-50 to-white border-sky-100',
   rose: 'from-rose-50 to-white border-rose-100',
   amber: 'from-amber-50 to-white border-amber-100',
-  violet: 'from-violet-50 to-white border-violet-100',
+  brand: 'from-brand-50 to-white border-brand-100',
   lime: 'from-lime-50 to-white border-lime-100',
 }
 
@@ -29,7 +132,7 @@ function openAssistant() {
 </script>
 
 <template>
-  <div class="p-4 sm:p-5 lg:p-6 max-w-[1440px] mx-auto space-y-5 animate-fade-in pb-20">
+  <div class="page space-y-5 animate-fade-in pb-20">
     <!-- Greeting + compact metrics -->
     <div class="grid grid-cols-1 xl:grid-cols-[minmax(300px,1fr)_minmax(600px,1.35fr)] gap-5 items-center">
       <div>
@@ -44,33 +147,33 @@ function openAssistant() {
 
       <div class="card px-4 py-3 grid grid-cols-2 sm:grid-cols-4 gap-1 divide-x divide-ink-100">
         <div class="flex items-center gap-2.5 px-2">
-          <span class="grid place-items-center w-9 h-9 rounded-xl bg-violet-50 text-violet-600 shrink-0">
+          <span class="grid place-items-center w-9 h-9 rounded-xl bg-brand-50 text-brand-600 shrink-0">
             <Icon name="sparkles" :size="18" />
           </span>
           <div class="min-w-0">
-            <p class="text-[10px] text-ink-400">Генерации</p>
-            <p class="text-lg font-extrabold leading-tight text-ink-900">{{ fmt(dashboardStats.totalGenerations) }}</p>
-            <p class="text-[9px] text-emerald-600 font-semibold">↑ {{ dashboardStats.trendGenerations }}% за неделю</p>
+            <p class="text-[10px] text-ink-400">Кадров создано</p>
+            <p class="text-lg font-extrabold leading-tight text-ink-900">{{ fmt(framesDone) }}</p>
+            <p class="text-[9px] text-ink-400">Во всех карточках</p>
           </div>
         </div>
-        <RouterLink to="/projects" class="flex items-center gap-2.5 px-3 group">
-          <span class="grid place-items-center w-9 h-9 rounded-xl bg-violet-50 text-violet-600 shrink-0">
+        <RouterLink to="/studios/product-cards/history" class="flex items-center gap-2.5 px-3 group">
+          <span class="grid place-items-center w-9 h-9 rounded-xl bg-brand-50 text-brand-600 shrink-0">
             <Icon name="folder" :size="18" />
           </span>
           <div>
-            <p class="text-[10px] text-ink-400">Проекты</p>
-            <p class="text-lg font-extrabold leading-tight text-ink-900 group-hover:text-violet-600">{{ dashboardStats.activeProjects }}</p>
-            <p class="text-[9px] text-ink-400">Активных</p>
+            <p class="text-[10px] text-ink-400">Карточки</p>
+            <p class="text-lg font-extrabold leading-tight text-ink-900 group-hover:text-brand-600">{{ fmt(cardsTotal) }}</p>
+            <p class="text-[9px] text-ink-400">Всего</p>
           </div>
         </RouterLink>
-        <RouterLink to="/studios/catalog" class="flex items-center gap-2.5 px-3 group">
+        <RouterLink to="/studios/product-cards/history" class="flex items-center gap-2.5 px-3 group">
           <span class="grid place-items-center w-9 h-9 rounded-xl bg-rose-50 text-rose-500 shrink-0">
             <Icon name="shoppingBag" :size="18" />
           </span>
           <div>
-            <p class="text-[10px] text-ink-400">Товары</p>
-            <p class="text-lg font-extrabold leading-tight text-ink-900 group-hover:text-rose-500">{{ fmt(dashboardStats.productsInCatalog) }}</p>
-            <p class="text-[9px] text-ink-400">В каталоге</p>
+            <p class="text-[10px] text-ink-400">За неделю</p>
+            <p class="text-lg font-extrabold leading-tight text-ink-900 group-hover:text-rose-500">{{ fmt(cardsThisWeek) }}</p>
+            <p class="text-[9px] text-ink-400">Новых карточек</p>
           </div>
         </RouterLink>
         <div class="flex items-center gap-2.5 px-3">
@@ -79,8 +182,10 @@ function openAssistant() {
           </span>
           <div>
             <p class="text-[10px] text-ink-400">Осталось</p>
-            <p class="text-lg font-extrabold leading-tight text-ink-900">{{ dashboardStats.creditsLeft }}</p>
-            <p class="text-[9px] text-ink-400">из {{ dashboardStats.creditsTotal }}</p>
+            <p class="text-lg font-extrabold leading-tight text-ink-900">{{ fmt(creditsLeft) }}</p>
+            <p class="text-[9px] text-ink-400">
+              {{ creditsLimit ? `из ${fmt(creditsLimit)}` : 'кредитов' }}
+            </p>
           </div>
         </div>
       </div>
@@ -111,7 +216,7 @@ function openAssistant() {
         >
           <div class="relative aspect-[4/3] rounded-xl overflow-hidden bg-ink-50 mb-2.5">
             <img :src="s.image" :alt="s.title" class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" />
-            <span class="absolute right-2 bottom-2 grid place-items-center w-7 h-7 rounded-full bg-white text-violet-600 shadow-soft">
+            <span class="absolute right-2 bottom-2 grid place-items-center w-7 h-7 rounded-full bg-white text-brand-600 shadow-soft">
               <Icon :name="s.icon" :size="14" />
             </span>
           </div>
@@ -140,15 +245,41 @@ function openAssistant() {
             Все проекты <Icon name="chevronRight" :size="16" />
           </RouterLink>
         </div>
-        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <!-- Пока нет ни одной карточки: ведём к созданию, а не показываем пустоту -->
+        <RouterLink
+          v-if="!recentProjects.length && !cardsStore.loading"
+          to="/studios/product-cards"
+          class="flex items-center gap-3 p-4 rounded-xl border border-dashed border-ink-200 hover:border-brand-400 hover:bg-brand-50/40 transition"
+        >
+          <div class="grid place-items-center w-10 h-10 rounded-xl bg-brand-50 text-brand-600 shrink-0">
+            <Icon name="sparkles" :size="18" />
+          </div>
+          <div class="min-w-0">
+            <div class="font-bold text-ink-900 text-sm">Здесь появятся ваши карточки</div>
+            <div class="text-xs text-ink-500 mt-0.5">
+              Загрузите фото товара — и создайте первую карточку
+            </div>
+          </div>
+        </RouterLink>
+
+        <div v-else class="grid grid-cols-2 lg:grid-cols-4 gap-3">
           <RouterLink
-            v-for="p in homeProjects"
+            v-for="p in recentProjects"
             :key="p.id"
             :to="p.to"
             class="group block min-w-0"
           >
             <div class="relative aspect-[16/9] rounded-xl overflow-hidden bg-ink-100 mb-2">
-              <img :src="p.thumbnail" :alt="p.title" class="w-full h-full object-cover" />
+              <img
+                v-if="p.thumbnail"
+                :src="p.thumbnail"
+                :alt="p.title"
+                class="w-full h-full object-cover"
+                loading="lazy"
+              />
+              <div v-else class="w-full h-full grid place-items-center text-ink-400">
+                <Icon name="image" :size="20" />
+              </div>
               <button
                 type="button"
                 class="absolute top-1.5 right-1.5 grid place-items-center w-7 h-7 rounded-lg bg-white/90 text-ink-500 hover:text-ink-900"
@@ -158,7 +289,7 @@ function openAssistant() {
               </button>
             </div>
             <div class="min-w-0 px-0.5">
-              <div class="font-bold text-ink-900 text-[12px] truncate group-hover:text-violet-600">
+              <div class="font-bold text-ink-900 text-[12px] truncate group-hover:text-brand-600">
                 {{ p.title }}
               </div>
               <div class="text-[10px] text-emerald-600 mt-1">{{ p.type }}</div>
@@ -179,28 +310,37 @@ function openAssistant() {
           </RouterLink>
         </div>
         <div class="card divide-y divide-ink-50 px-1">
-          <RouterLink
-            v-for="a in homeActivity"
+          <div
+            v-for="a in activity"
             :key="a.id"
-            :to="a.to"
-            class="flex items-center gap-2.5 px-3 py-2 hover:bg-ink-50/80 transition-colors"
+            class="flex items-center gap-2.5 px-3 py-2"
           >
-            <span class="grid place-items-center w-8 h-8 rounded-lg shrink-0" :class="a.tone">
-              <Icon :name="a.icon" :size="15" />
+            <span
+              class="grid place-items-center w-8 h-8 rounded-lg shrink-0"
+              :class="look(a.type).tone"
+            >
+              <Icon :name="look(a.type).icon" :size="15" />
             </span>
             <div class="min-w-0 flex-1">
-              <div class="text-[12px] font-semibold text-ink-900 truncate">{{ a.title }}</div>
-              <div class="text-[9px] text-ink-400 mt-0.5">{{ a.time }}</div>
+              <div class="text-[12px] font-semibold text-ink-900 truncate">{{ a.text }}</div>
+              <div class="text-[9px] text-ink-400 mt-0.5">{{ fmtActivityTime(a.at) }}</div>
             </div>
-            <Icon name="chevronRight" :size="16" class="text-ink-300 shrink-0" />
-          </RouterLink>
+          </div>
+          <!-- Пустое состояние вместо демо-списка: пустой журнал честнее
+               выдуманных событий, по которым непонятно, что происходит. -->
+          <div v-if="!activity.length" class="px-3 py-8 text-center">
+            <p class="text-[12px] font-semibold text-ink-500">Пока ничего не происходило</p>
+            <p class="text-[10px] text-ink-400 mt-1">
+              Создайте карточку товара — событие появится здесь.
+            </p>
+          </div>
         </div>
       </section>
     </div>
 
     <!-- Bottom help banner -->
     <div
-      class="relative overflow-hidden rounded-2xl border border-violet-100 bg-gradient-to-r from-violet-50 via-fuchsia-50/40 to-white px-5 py-3.5"
+      class="relative overflow-hidden rounded-2xl border border-brand-100 bg-gradient-to-r from-brand-50 via-fuchsia-50/40 to-white px-5 py-3.5"
     >
       <div class="flex flex-col lg:flex-row lg:items-center gap-4 lg:gap-8">
         <div class="min-w-0 flex-1">
@@ -208,12 +348,12 @@ function openAssistant() {
           <p class="text-[11px] text-ink-500 mt-1">
             Быстрые подсказки:
             <RouterLink to="/studios/product-cards" class="font-semibold text-ink-800 hover:underline">карточка товара</RouterLink>,
-            <RouterLink to="/studios/photo" class="font-semibold text-ink-800 hover:underline">фото-студия</RouterLink>
+            <RouterLink to="/studios/product-cards/history" class="font-semibold text-ink-800 hover:underline">история карточек</RouterLink>
             или
             <RouterLink to="/templates" class="font-semibold text-ink-800 hover:underline">готовые шаблоны</RouterLink>.
           </p>
         </div>
-        <button type="button" class="btn btn-md shrink-0 bg-[#7C5CFF] text-white hover:brightness-110" @click="openAssistant">
+        <button type="button" class="btn btn-md shrink-0 bg-[hsl(66.03deg_100%_55.1%)] text-ink-900 hover:brightness-110" @click="openAssistant">
           <Icon name="sparkles" :size="18" />
           Открыть ассистента
         </button>

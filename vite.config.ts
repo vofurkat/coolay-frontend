@@ -12,5 +12,12 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     port: 5174,
+    // В dev проксируем API на локальный coolay-backend (порт можно переопределить через API_PORT)
+    proxy: {
+      '/api': {
+        target: `http://127.0.0.1:${process.env.API_PORT || 8821}`,
+        changeOrigin: true,
+      },
+    },
   },
 })

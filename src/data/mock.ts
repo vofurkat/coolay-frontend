@@ -194,7 +194,7 @@ export interface HomeScenario {
   description: string
   to: string
   icon: string
-  tone: 'mint' | 'sky' | 'rose' | 'amber' | 'violet' | 'lime'
+  tone: 'mint' | 'sky' | 'rose' | 'amber' | 'brand' | 'lime'
   image: string
 }
 
@@ -210,39 +210,21 @@ export const homeScenarios: HomeScenario[] = [
   },
   {
     id: 's2',
-    title: 'Подготовить фото к продаже',
-    description: 'Фон, свет и качество для маркетплейса',
-    to: '/studios/photo',
-    icon: 'camera',
+    title: 'История карточек',
+    description: 'Все созданные SKU: поиск, фильтры и экспорт',
+    to: '/studios/product-cards/history',
+    icon: 'history',
     tone: 'sky',
-    image: '/dashboard/handbag.webp',
-  },
-  {
-    id: 's3',
-    title: 'Сделать fashion-фото',
-    description: 'Модель, посадка и образ для одежды',
-    to: '/studios/fashion',
-    icon: 'shirt',
-    tone: 'rose',
-    image: '/dashboard/fashion-model.webp',
-  },
-  {
-    id: 's4',
-    title: 'Обработать каталог',
-    description: 'Массовая работа с десятками и сотнями SKU',
-    to: '/studios/catalog',
-    icon: 'layers',
-    tone: 'amber',
     image: '/dashboard/catalog.webp',
   },
   {
-    id: 's5',
-    title: 'Адаптировать под маркетплейс',
-    description: 'Wildberries, Ozon, Shopify и другие площадки',
-    to: '/studios/marketplaces',
-    icon: 'shoppingBag',
-    tone: 'violet',
-    image: '/dashboard/marketplaces.webp',
+    id: 's3',
+    title: 'Мои проекты',
+    description: 'Сгенерированные карточки и статусы работы',
+    to: '/projects',
+    icon: 'folder',
+    tone: 'brand',
+    image: '/dashboard/handbag.webp',
   },
   {
     id: 's6',
@@ -330,8 +312,8 @@ export const homeActivity: HomeActivity[] = [
     title: 'Сгенерировано 4 изображения',
     time: 'Вчера, 16:42',
     icon: 'sparkles',
-    tone: 'bg-violet-50 text-violet-700',
-    to: '/media',
+    tone: 'bg-brand-50 text-brand-700',
+    to: '/history',
   },
   {
     id: 'a4',
@@ -347,6 +329,6 @@ export const homeActivity: HomeActivity[] = [
     time: '2 дня назад',
     icon: 'shoppingBag',
     tone: 'bg-rose-50 text-rose-700',
-    to: '/studios/marketplaces',
+    to: '/studios/product-cards',
   },
 ]

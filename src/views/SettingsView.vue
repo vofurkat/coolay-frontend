@@ -1,13 +1,11 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import Icon from '@/components/ui/Icon.vue'
 import Avatar from '@/components/ui/Avatar.vue'
 import UserModal from '@/components/settings/UserModal.vue'
 import { useAuthStore } from '@/stores/auth'
-import { teamMembers } from '@/data/mock'
-import { sourceMeta } from '@/data/sources'
-import type { TeamMember, MemberRole, MemberStatus } from '@/types'
+import { isFail, teamApi, type Employee, type EmployeeRole, type EmployeeStatus } from '@/data/platformApi'
 
 const auth = useAuthStore()
 const tab = ref<'profile' | 'users' | 'workspace' | 'billing'>('profile')
@@ -24,72 +22,152 @@ const form = ref({
   company: auth.user?.company || '',
 })
 
-/* ---------- Пользователи ---------- */
-const members = ref<TeamMember[]>([...teamMembers])
+/* ---------- Сотрудники ----------
+ * Раньше вкладка работала на моковом массиве: администратор «добавлял»
+ * сотрудника, тот исчезал после перезагрузки и бот его не знал. Теперь
+ * это тот же список /api/team/employees, который читает Telegram-бот.
+ */
+const members = ref<Employee[]>([])
+const loading = ref(false)
+const listError = ref('')
+const saving = ref(false)
+const modalError = ref('')
+
+async function loadMembers() {
+  loading.value = true
+  listError.value = ''
+  // Клиент API не бросает исключения, а возвращает Fail — проверяем через isFail.
+  const r = await teamApi.employees()
+  if (isFail(r)) listError.value = r.error || 'Не удалось загрузить сотрудников'
+  else members.value = r.employees
+  loading.value = false
+}
+onMounted(() => void loadMembers())
 
 const search = ref('')
 const filteredMembers = computed(() => {
   const q = search.value.trim().toLowerCase()
   if (!q) return members.value
   return members.value.filter(
-    (m) => m.name.toLowerCase().includes(q) || m.email.toLowerCase().includes(q),
+    (m) =>
+      m.fullName.toLowerCase().includes(q) ||
+      (m.email || '').toLowerCase().includes(q) ||
+      (m.phone || '').includes(q.replace(/\D/g, '')),
   )
 })
 
 const activeCount = computed(() => members.value.filter((m) => m.status === 'active').length)
 const blockedCount = computed(() => members.value.filter((m) => m.status === 'blocked').length)
+const botCount = computed(() => members.value.filter((m) => m.telegramId).length)
 
-const roleMeta: Record<MemberRole, { label: string; cls: string }> = {
+const roleMeta: Record<EmployeeRole, { label: string; cls: string }> = {
   owner: { label: 'Владелец', cls: 'bg-accent text-ink-900' },
   admin: { label: 'Администратор', cls: 'bg-ink-900 text-accent' },
   editor: { label: 'Редактор', cls: 'bg-ink-100 text-ink-700' },
   viewer: { label: 'Наблюдатель', cls: 'bg-ink-50 text-ink-500' },
 }
 
-const statusMeta: Record<MemberStatus, { label: string; cls: string; dot: string }> = {
+const statusMeta: Record<EmployeeStatus, { label: string; cls: string; dot: string }> = {
   active: { label: 'Активен', cls: 'bg-green-50 text-green-600', dot: 'bg-green-500' },
   blocked: { label: 'Заблокирован', cls: 'bg-red-50 text-red-600', dot: 'bg-red-500' },
-  invited: { label: 'Приглашён', cls: 'bg-amber-50 text-amber-600', dot: 'bg-amber-500' },
+  invited: { label: 'Ожидает входа', cls: 'bg-amber-50 text-amber-600', dot: 'bg-amber-500' },
+}
+
+/*
+ * Подпись статуса через функцию, а не statusMeta[m.status] напрямую: если на
+ * сервере когда-нибудь появится новый статус, интерфейс покажет его как есть,
+ * а не рухнет на обращении к полю у undefined, унося с собой всю таблицу.
+ */
+function statusLook(s: EmployeeStatus) {
+  return statusMeta[s] || { label: s, cls: 'bg-ink-100 text-ink-600', dot: 'bg-ink-400' }
 }
 
 const modalOpen = ref(false)
-const editing = ref<TeamMember | null>(null)
+const editing = ref<Employee | null>(null)
 const menuFor = ref<string | null>(null)
 
 function openAdd() {
   editing.value = null
+  modalError.value = ''
   modalOpen.value = true
 }
-function openEdit(m: TeamMember) {
+function openEdit(m: Employee) {
   menuFor.value = null
   editing.value = m
+  modalError.value = ''
   modalOpen.value = true
 }
-function saveMember(m: TeamMember) {
-  const idx = members.value.findIndex((x) => x.id === m.id)
-  if (idx >= 0) members.value[idx] = m
-  else members.value.unshift(m)
-  modalOpen.value = false
-}
-function toggleBlock(m: TeamMember) {
-  menuFor.value = null
-  if (m.role === 'owner') return
-  m.status = m.status === 'blocked' ? 'active' : 'blocked'
-}
-function removeMember(m: TeamMember) {
-  menuFor.value = null
-  if (m.role === 'owner') return
-  members.value = members.value.filter((x) => x.id !== m.id)
+
+async function saveMember(payload: Partial<Employee>) {
+  saving.value = true
+  modalError.value = ''
+  const r = editing.value
+    ? await teamApi.updateEmployee(editing.value.id, payload)
+    : await teamApi.createEmployee(payload)
+
+  if (isFail(r)) {
+    // Ошибку показываем в модале, а не закрываем его: иначе введённые данные
+    // потерялись бы и их пришлось бы набирать заново. Сервер сообщает
+    // содержательно — например «Сотрудник с таким телефоном уже есть».
+    modalError.value = r.error || 'Не удалось сохранить'
+  } else if (editing.value) {
+    const idx = members.value.findIndex((x) => x.id === r.employee.id)
+    if (idx >= 0) members.value[idx] = r.employee
+    modalOpen.value = false
+  } else {
+    members.value.unshift(r.employee)
+    modalOpen.value = false
+  }
+  saving.value = false
 }
 
-function fmt(iso?: string) {
+async function toggleBlock(m: Employee) {
+  menuFor.value = null
+  if (m.role === 'owner') return
+  const next: EmployeeStatus = m.status === 'blocked' ? 'active' : 'blocked'
+  const prev = m.status
+  m.status = next // оптимистично, чтобы интерфейс не «залипал»
+  const r = await teamApi.updateEmployee(m.id, { status: next })
+  if (isFail(r)) {
+    m.status = prev // откат: на сервере ничего не изменилось
+    listError.value = r.error || 'Не удалось изменить статус'
+  }
+}
+
+async function removeMember(m: Employee) {
+  menuFor.value = null
+  if (m.role === 'owner') return
+  if (!confirm(`Удалить сотрудника ${m.fullName}? Доступ к боту прекратится.`)) return
+  const backup = members.value
+  members.value = members.value.filter((x) => x.id !== m.id)
+  const r = await teamApi.removeEmployee(m.id)
+  if (isFail(r)) {
+    members.value = backup // откат: сотрудник на сервере остался
+    listError.value = r.error || 'Не удалось удалить сотрудника'
+  }
+}
+
+function fmt(iso?: string | null) {
   if (!iso) return '—'
-  return new Date(iso).toLocaleDateString('ru', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+  return new Date(iso).toLocaleDateString('ru', {
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+/** Телефон хранится цифрами — показываем в читаемом виде. */
+function fmtPhone(p: string) {
+  if (!p) return '—'
+  const d = p.replace(/\D/g, '')
+  if (d.length === 11) return `+${d[0]} ${d.slice(1, 4)} ${d.slice(4, 7)}-${d.slice(7, 9)}-${d.slice(9)}`
+  return '+' + d
 }
 </script>
 
 <template>
-  <div class="p-4 sm:p-6 lg:p-8 max-w-[1400px] mx-auto space-y-6 animate-fade-in">
+  <div class="page space-y-6 animate-fade-in">
     <PageHeader title="Настройки" subtitle="Управление аккаунтом, командой и рабочим пространством" />
 
     <div class="flex items-center gap-2 overflow-x-auto no-scrollbar">
@@ -141,10 +219,11 @@ function fmt(iso?: string) {
           <span class="chip bg-ink-50 text-ink-600"><Icon name="users" :size="14" /> Всего: {{ members.length }}</span>
           <span class="chip bg-green-50 text-green-600"><span class="w-2 h-2 rounded-full bg-green-500" /> {{ activeCount }}</span>
           <span v-if="blockedCount" class="chip bg-red-50 text-red-600"><span class="w-2 h-2 rounded-full bg-red-500" /> {{ blockedCount }}</span>
+          <span class="chip bg-ink-900 text-accent"><Icon name="send" :size="13" /> в боте: {{ botCount }}</span>
         </div>
         <div class="relative sm:ml-auto sm:w-64">
           <Icon name="search" :size="16" class="absolute left-3 top-1/2 -translate-y-1/2 text-ink-400" />
-          <input v-model="search" class="input pl-9" placeholder="Поиск по имени или email" />
+          <input v-model="search" class="input pl-9" placeholder="Поиск по имени, email или телефону" />
         </div>
         <button class="btn btn-accent btn-md shrink-0" @click="openAdd">
           <Icon name="userPlus" :size="18" /> Добавить
@@ -158,8 +237,9 @@ function fmt(iso?: string) {
             <thead>
               <tr class="border-b border-ink-100 bg-ink-50/60">
                 <th class="text-left font-bold text-ink-500 text-xs uppercase tracking-wide px-4 py-3">Пользователь</th>
+                <th class="text-left font-bold text-ink-500 text-xs uppercase tracking-wide px-4 py-3">Телефон</th>
                 <th class="text-left font-bold text-ink-500 text-xs uppercase tracking-wide px-4 py-3">Роль</th>
-                <th class="text-left font-bold text-ink-500 text-xs uppercase tracking-wide px-4 py-3">Устройство</th>
+                <th class="text-left font-bold text-ink-500 text-xs uppercase tracking-wide px-4 py-3">Telegram</th>
                 <th class="text-left font-bold text-ink-500 text-xs uppercase tracking-wide px-4 py-3">Статус</th>
                 <th class="text-right font-bold text-ink-500 text-xs uppercase tracking-wide px-4 py-3">Был(а)</th>
                 <th class="px-4 py-3"></th>
@@ -174,25 +254,36 @@ function fmt(iso?: string) {
               >
                 <td class="px-4 py-3">
                   <div class="flex items-center gap-3">
-                    <Avatar :name="m.name" :size="36" />
+                    <Avatar :name="m.fullName" :size="36" />
                     <div class="min-w-0">
-                      <p class="font-bold text-ink-900 whitespace-nowrap">{{ m.name }}</p>
-                      <p class="text-xs text-ink-400 truncate">{{ m.email }}</p>
+                      <p class="font-bold text-ink-900 whitespace-nowrap">{{ m.fullName }}</p>
+                      <p class="text-xs text-ink-400 truncate">{{ m.email || '—' }}</p>
                     </div>
                   </div>
+                </td>
+                <td class="px-4 py-3 whitespace-nowrap font-mono text-xs text-ink-700">
+                  {{ fmtPhone(m.phone) }}
                 </td>
                 <td class="px-4 py-3">
                   <span class="chip whitespace-nowrap" :class="roleMeta[m.role].cls">{{ roleMeta[m.role].label }}</span>
                 </td>
                 <td class="px-4 py-3">
-                  <span class="chip bg-ink-50 text-ink-600 whitespace-nowrap">
-                    <Icon :name="sourceMeta[m.source].icon" :size="14" /> {{ sourceMeta[m.source].label }}
+                  <span
+                    v-if="m.telegramId"
+                    class="chip bg-green-50 text-green-600 whitespace-nowrap"
+                    :title="m.telegramUsername ? '@' + m.telegramUsername : ''"
+                  >
+                    <Icon name="check" :size="13" />
+                    {{ m.telegramUsername ? '@' + m.telegramUsername : 'подключён' }}
+                  </span>
+                  <span v-else class="chip bg-amber-50 text-amber-600 whitespace-nowrap">
+                    <Icon name="alert" :size="13" /> не подключён
                   </span>
                 </td>
                 <td class="px-4 py-3">
-                  <span class="chip whitespace-nowrap" :class="statusMeta[m.status].cls">
-                    <span class="w-1.5 h-1.5 rounded-full" :class="statusMeta[m.status].dot" />
-                    {{ statusMeta[m.status].label }}
+                  <span class="chip whitespace-nowrap" :class="statusLook(m.status).cls">
+                    <span class="w-1.5 h-1.5 rounded-full" :class="statusLook(m.status).dot" />
+                    {{ statusLook(m.status).label }}
                   </span>
                 </td>
                 <td class="px-4 py-3 text-right text-ink-400 whitespace-nowrap">{{ fmt(m.lastActive) }}</td>
@@ -229,10 +320,28 @@ function fmt(iso?: string) {
             </tbody>
           </table>
         </div>
-        <div v-if="filteredMembers.length === 0" class="text-center py-12 text-ink-400">Ничего не найдено</div>
+        <div v-if="loading" class="text-center py-12 text-ink-400">
+          <Icon name="loader" :size="20" class="animate-spin inline-block" />
+          <p class="mt-2 text-sm">Загружаем сотрудников…</p>
+        </div>
+        <div v-else-if="!members.length" class="text-center py-12 px-6">
+          <p class="font-bold text-ink-900">Сотрудников пока нет</p>
+          <p class="text-sm text-ink-400 mt-1 max-w-md mx-auto">
+            Добавьте сотрудника с номером телефона — и он сможет создавать карточки прямо
+            в Telegram через @coolay_bot, без пароля и входа на сайт.
+          </p>
+          <button class="btn btn-accent btn-md mt-4" @click="openAdd">
+            <Icon name="userPlus" :size="18" /> Добавить сотрудника
+          </button>
+        </div>
+        <div v-else-if="!filteredMembers.length" class="text-center py-12 text-ink-400">
+          Ничего не найдено
+        </div>
       </div>
+      <p v-if="listError" class="text-sm text-red-600">{{ listError }}</p>
       <p class="text-xs text-ink-400">
-        Владельца нельзя заблокировать или удалить. Заблокированные пользователи не могут входить и создавать генерации.
+        Владельца нельзя заблокировать или удалить. Заблокированные сотрудники не могут входить
+        и создавать генерации — ни на сайте, ни через бота.
       </p>
     </div>
 
@@ -266,9 +375,23 @@ function fmt(iso?: string) {
         </div>
         <button class="btn btn-dark btn-md">Изменить тариф</button>
       </div>
+      <RouterLink to="/usage" class="card p-5 flex items-center justify-between gap-3 hover:border-ink-200">
+        <div>
+          <p class="text-sm font-bold text-ink-900">Журнал списаний</p>
+          <p class="text-xs text-ink-400 mt-0.5">Сколько кредит-токенов ушло и на какую операцию</p>
+        </div>
+        <Icon name="arrowRight" :size="16" class="text-ink-400" />
+      </RouterLink>
     </div>
 
     <!-- Add / edit modal -->
-    <UserModal v-if="modalOpen" :member="editing" @close="modalOpen = false" @save="saveMember" />
+    <UserModal
+      v-if="modalOpen"
+      :member="editing"
+      :saving="saving"
+      :server-error="modalError"
+      @close="modalOpen = false"
+      @save="saveMember"
+    />
   </div>
 </template>
