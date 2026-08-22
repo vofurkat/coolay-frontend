@@ -21,6 +21,14 @@
     />
   </head>
   <body>
+    <!--
+      SDK Telegram Mini App. Подключается синхронно в <head>-порядке до main.ts:
+      компонент /tg читает window.Telegram.WebApp.initData сразу в onMounted,
+      и при отложенной загрузке объекта там ещё не было бы — приложение решило
+      бы, что открыто вне Telegram, и отказало бы в доступе.
+      Скрипт крошечный (~10 КБ) и на остальных страницах просто не используется.
+    -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <div id="app"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>

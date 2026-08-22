@@ -629,9 +629,30 @@ export async function telegramRouter(req, res, { url, sendJson, readBody }) {
 
       /* ── Запуск генерации кадров ── */
       if (step === 'generate') {
-        const slots = Array.isArray(d.slots) && d.slots.length ? d.slots : ['main', 'front']
-        const imageUrl = absUpload(d.imageUrl)
-        if (!imageUrl) {
+        const defSlots = Array.isArray(d.slots) && d.slots.length ? d.slots : ['main', 'front']
+
+        // Мини-приложение умеет и одиночный, и пакетный режим (до 10 товаров).
+        // Одиночный присылает те же поля верхнего уровня — поддерживаем оба
+        // формата, чтобы старая версия клиента в кэше Telegram не сломалась.
+        const rawItems =
+          Array.isArray(d.items) && d.items.length
+            ? d.items
+            : d.imageUrl
+              ? [{ imageUrl: d.imageUrl, productPrompt: d.productPrompt, gender: d.gender, slots: defSlots, label: d.label }]
+              : []
+
+        const items = rawItems.slice(0, 10).map((it) => ({
+          imageUrl: absUpload(it?.imageUrl),
+          productPrompt: it?.productPrompt || '',
+          gender: it?.gender || '',
+          templateId: it?.templateId || '',
+          slots: Array.isArray(it?.slots) && it.slots.length ? it.slots : defSlots,
+          label: it?.label || '',
+        }))
+
+        // Отсеиваем товары без пригодного адреса фото ДО списания кредитов.
+        const usable = items.filter((it) => it.imageUrl)
+        if (!usable.length) {
           sendJson(res, 400, {
             ok: false,
             error: publicBase()
@@ -640,19 +661,11 @@ export async function telegramRouter(req, res, { url, sendJson, readBody }) {
           })
           return true
         }
+
         const r = await createSkuJob({
           clientId: client.id,
           accountId: null,
-          items: [
-            {
-              imageUrl,
-              productPrompt: d.productPrompt || '',
-              gender: d.gender || '',
-              templateId: d.templateId || '',
-              slots,
-              label: d.label || '',
-            },
-          ],
+          items: usable,
           charge,
         })
         // Привязываем задание к сессии, чтобы мини-приложение могло вернуться

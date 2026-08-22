@@ -36,6 +36,20 @@ const router = createRouter({
       component: () => import('@/views/LoginView.vue'),
       meta: { public: true, title: 'Вход' },
     },
+    /*
+     * Mini App внутри Telegram.
+     * public: true и вне AppLayout — намеренно. Авторизация здесь идёт по
+     * initData Telegram, а не по cookie-сессии: у сотрудника может вообще не
+     * быть учётной записи на сайте. Если пустить этот маршрут через общий
+     * guard, бот получал бы редирект на /login и работать бы не смог.
+     * Сайдбар и топбар тоже не нужны — это узкий экран телефона.
+     */
+    {
+      path: '/tg',
+      name: 'telegram-miniapp',
+      component: () => import('@/views/TelegramMiniAppView.vue'),
+      meta: { public: true, title: 'Coolay в Telegram' },
+    },
     {
       path: '/',
       component: () => import('@/layouts/AppLayout.vue'),
