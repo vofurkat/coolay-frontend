@@ -70,7 +70,16 @@ const roleMeta: Record<EmployeeRole, { label: string; cls: string }> = {
 const statusMeta: Record<EmployeeStatus, { label: string; cls: string; dot: string }> = {
   active: { label: 'Активен', cls: 'bg-green-50 text-green-600', dot: 'bg-green-500' },
   blocked: { label: 'Заблокирован', cls: 'bg-red-50 text-red-600', dot: 'bg-red-500' },
-  pending: { label: 'Ожидает', cls: 'bg-amber-50 text-amber-600', dot: 'bg-amber-500' },
+  invited: { label: 'Ожидает входа', cls: 'bg-amber-50 text-amber-600', dot: 'bg-amber-500' },
+}
+
+/*
+ * Подпись статуса через функцию, а не statusMeta[m.status] напрямую: если на
+ * сервере когда-нибудь появится новый статус, интерфейс покажет его как есть,
+ * а не рухнет на обращении к полю у undefined, унося с собой всю таблицу.
+ */
+function statusLook(s: EmployeeStatus) {
+  return statusMeta[s] || { label: s, cls: 'bg-ink-100 text-ink-600', dot: 'bg-ink-400' }
 }
 
 const modalOpen = ref(false)
@@ -272,9 +281,9 @@ function fmtPhone(p: string) {
                   </span>
                 </td>
                 <td class="px-4 py-3">
-                  <span class="chip whitespace-nowrap" :class="statusMeta[m.status].cls">
-                    <span class="w-1.5 h-1.5 rounded-full" :class="statusMeta[m.status].dot" />
-                    {{ statusMeta[m.status].label }}
+                  <span class="chip whitespace-nowrap" :class="statusLook(m.status).cls">
+                    <span class="w-1.5 h-1.5 rounded-full" :class="statusLook(m.status).dot" />
+                    {{ statusLook(m.status).label }}
                   </span>
                 </td>
                 <td class="px-4 py-3 text-right text-ink-400 whitespace-nowrap">{{ fmt(m.lastActive) }}</td>

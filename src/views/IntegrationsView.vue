@@ -121,6 +121,9 @@ const botLive = ref(false)
 
 onMounted(async () => {
   const r = await telegramApi.botInfo()
+  // botAvailable остаётся true и когда связь с Telegram временно потеряна
+  // (ответ из кэша): интеграция от этого работать не перестаёт, а мигающий
+  // счётчик «Активно: 0» только сбивал бы с толку.
   if (!isFail(r)) botLive.value = r.botAvailable
 })
 

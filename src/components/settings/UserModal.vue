@@ -57,8 +57,19 @@ const error = ref('')
 const digits = computed(() => form.value.phone.replace(/\D/g, ''))
 
 /** Смена номера у существующего сотрудника отвяжет его Telegram. */
+/*
+ * Сравнивать нужно цифры с цифрами. Раньше здесь digits ('996702907747')
+ * сравнивались с member.phone ('+996702907747'), то есть всегда неравны, и
+ * админ при любом открытии карточки уже подключённого сотрудника видел
+ * «Номер изменён — привязка Telegram сбросится», хотя ничего не менял.
+ * Предупреждение о потере доступа, возникающее без причины, читается как
+ * «бот отвалился», поэтому сравниваем в одном формате.
+ */
 const phoneChanged = computed(
-  () => isEdit.value && !!props.member?.telegramId && digits.value !== props.member?.phone,
+  () =>
+    isEdit.value &&
+    !!props.member?.telegramId &&
+    digits.value !== (props.member?.phone || '').replace(/\D/g, ''),
 )
 
 function submit() {

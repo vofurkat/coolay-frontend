@@ -68,13 +68,65 @@ function relUpload(u) {
   return i >= 0 ? v.slice(i) : ''
 }
 
+/*
+ * Кэш ответа getMe.
+ *
+ * ЗАЧЕМ. Раньше состояние бота выяснялось живым запросом к api.telegram.org
+ * при КАЖДОЙ загрузке страницы, и результат («подключён» / «не подключён»)
+ * целиком зависел от того, дошёл ли этот один запрос. Любая секундная потеря
+ * связи, таймаут или ответ 429 при частых обновлениях страницы — и панель
+ * показывала «Бот не подключён», хотя бот настроен и работает: сотрудники в
+ * это же время спокойно генерировали карточки через Telegram. Именно так и
+ * выглядела жалоба «всё подключилось, но пишет что не подключено».
+ *
+ * ЧТО ДЕЛАЕМ. Удачный ответ запоминаем. Пока он свеж (TTL) — отдаём из
+ * памяти, не беспокоя Telegram. Если запрос не удался, но удачный ответ
+ * когда-либо был, отдаём его с признаком stale: бот подключён, просто связь
+ * сейчас недоступна. «Не подключён» остаётся только для случая, когда токена
+ * нет вовсе или Telegram его отверг — то есть когда это правда.
+ */
+// TTL вынесен в переменную окружения, чтобы тест мог отключить кэш и проверить
+// поведение при реальном сбое сети, не выжидая минуту.
+const BOT_TTL_MS = Number(process.env.TELEGRAM_BOT_TTL_MS ?? 60_000)
+let botCache = null // { bot, at }
+
+/** Личность бота: из кэша, либо запрос к Telegram. Никогда не бросает. */
+async function botIdentity() {
+  if (!token()) {
+    botCache = null
+    return { bot: null, stale: false, error: '' }
+  }
+  if (botCache && Date.now() - botCache.at < BOT_TTL_MS) {
+    return { bot: botCache.bot, stale: false, error: '' }
+  }
+  try {
+    const me = await tg('getMe', {})
+    botCache = { bot: { id: me.id, username: me.username, name: me.first_name }, at: Date.now() }
+    return { bot: botCache.bot, stale: false, error: '' }
+  } catch (e) {
+    const msg = String(e.message || '')
+    // 401 Unauthorized — токен действительно недействителен: кэш сбрасываем,
+    // иначе панель годами показывала бы отозванного бота как рабочего.
+    if (/401|[Uu]nauthorized/.test(msg)) {
+      botCache = null
+      return { bot: null, stale: false, error: 'Telegram отклонил токен бота' }
+    }
+    if (botCache) return { bot: botCache.bot, stale: true, error: msg }
+    return { bot: null, stale: false, error: msg }
+  }
+}
+
 async function tg(method, payload) {
   const t = token()
   if (!t) throw new Error('TELEGRAM_BOT_TOKEN не задан')
+  // Таймаут обязателен: без него зависший запрос к Telegram держал бы
+  // открытым и наш ответ браузеру — страница «Интеграции» висела бы в
+  // состоянии «Загружаем состояние…» до таймаута nginx.
   const resp = await fetch(`${API}/bot${t}/${method}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload || {}),
+    signal: AbortSignal.timeout(10_000),
   })
   const data = await resp.json().catch(() => ({}))
   if (!data.ok) throw new Error(`Telegram ${method}: ${data.description || resp.status}`)
@@ -513,23 +565,15 @@ export async function telegramRouter(req, res, { url, sendJson, readBody, auth =
     }
     const mine = db.employees.filter((e) => e.clientId === auth.client.id)
     const base = publicBase()
-    let bot = null
-    if (token()) {
-      // getMe кэшировать не нужно: запрос дешёвый, а показывать устаревшее
-      // имя бота хуже, чем секунду подождать.
-      try {
-        const me = await tg('getMe', {})
-        bot = { id: me.id, username: me.username, name: me.first_name }
-      } catch {
-        // Токен задан, но Telegram его не принял — так и скажем, вместо того
-        // чтобы молча показать «не подключён» и отправить искать причину.
-        bot = null
-      }
-    }
+    const { bot, stale, error: botError } = await botIdentity()
     sendJson(res, 200, {
       ok: true,
       configured: !!token(),
       botAvailable: !!bot,
+      // Сеть до Telegram отвалилась, но бот настроен и работает: интерфейс
+      // должен сказать «связь с Telegram потеряна», а не «бот не подключён».
+      botStale: stale,
+      botError,
       bot,
       miniAppUrl: base ? `${base}/tg` : '',
       botLink: bot?.username ? `https://t.me/${bot.username}` : '',

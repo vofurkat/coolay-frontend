@@ -131,7 +131,13 @@ export const templatesApi = {
 /* ─────────────────────────── Команда ─────────────────────────── */
 
 export type EmployeeRole = 'owner' | 'admin' | 'editor' | 'viewer'
-export type EmployeeStatus = 'active' | 'blocked' | 'pending'
+/*
+ * Значения ровно те, что допускает бэкенд (team.js STATUSES). Здесь стоял
+ * 'pending', которого сервер не отдаёт никогда, и не было 'invited', который
+ * он ставит приглашённому сотруднику. Из-за расхождения разметка искала
+ * подпись для несуществующего ключа и падала на всей таблице сотрудников.
+ */
+export type EmployeeStatus = 'active' | 'blocked' | 'invited'
 
 export interface Employee {
   id: string
@@ -290,6 +296,10 @@ export interface BotEmployeeInfo {
 export interface BotInfo {
   configured: boolean
   botAvailable: boolean
+  /** Бот подключён, но связь с Telegram сейчас недоступна — данные из кэша. */
+  botStale?: boolean
+  /** Причина, если Telegram не ответил или отклонил токен. */
+  botError?: string
   bot: { id: number; username: string; name: string } | null
   miniAppUrl: string
   botLink: string

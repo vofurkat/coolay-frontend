@@ -102,10 +102,18 @@ function state(e: BotEmployeeInfo) {
           <div class="flex items-center gap-2 flex-wrap">
             <h3 class="font-extrabold text-ink-900">Telegram-бот</h3>
             <span
-              v-if="info?.botAvailable"
+              v-if="info?.botAvailable && !info?.botStale"
               class="chip bg-green-50 text-green-600 text-[10px]"
             >
               <Icon name="check" :size="11" /> Подключён
+            </span>
+            <!-- Бот настроен, но Telegram сейчас недоступен: это сбой связи,
+                 а не отсутствие подключения — так и пишем. -->
+            <span
+              v-else-if="info?.botAvailable"
+              class="chip bg-amber-50 text-amber-700 text-[10px]"
+            >
+              <Icon name="alert" :size="11" /> Нет связи с Telegram
             </span>
             <span
               v-else-if="!loading"
@@ -134,6 +142,15 @@ function state(e: BotEmployeeInfo) {
 
       <!-- Бот подключён -->
       <div v-else-if="info?.botAvailable" class="mt-5 space-y-3">
+        <!-- Бот работает, сотрудники им пользуются, но getMe сейчас не прошёл.
+             Показываем это как временный сбой связи и не пугаем «отключением». -->
+        <p
+          v-if="info.botStale"
+          class="rounded-xl bg-amber-50 border border-amber-100 text-amber-800 text-sm px-3.5 py-2.5"
+        >
+          Связь с Telegram сейчас недоступна — данные о боте показаны из последнего
+          успешного запроса. Бот подключён, сотрудники продолжают работать.
+        </p>
         <div class="grid sm:grid-cols-2 gap-3">
           <div class="rounded-xl border border-ink-100 bg-ink-50/60 p-3">
             <p class="text-xs text-ink-400">Бот</p>
@@ -193,15 +210,24 @@ function state(e: BotEmployeeInfo) {
         </div>
       </div>
 
-      <!-- Токен не задан на сервере -->
+      <!-- Бот действительно не подключён: токена нет либо Telegram его отклонил.
+           Причины разные, и лечатся они по-разному, поэтому не сваливаем их в
+           одну формулировку. -->
       <div v-else class="mt-5">
         <p
           class="rounded-xl bg-amber-50 border border-amber-100 text-amber-800 text-sm px-3.5 py-3"
         >
-          <span class="font-bold">Бот не подключён.</span>
-          Токен бота хранится в настройках сервера и не вводится через браузер — так он не попадёт
-          ни в историю запросов, ни в расширения. Обратитесь в поддержку Coolay, чтобы подключить
-          бота вашей компании.
+          <template v-if="info?.configured">
+            <span class="font-bold">Telegram отклонил токен бота.</span>
+            Скорее всего токен отозвали или заменили в @BotFather. Обратитесь в поддержку Coolay —
+            нужно прописать актуальный токен на сервере.
+          </template>
+          <template v-else>
+            <span class="font-bold">Бот не подключён.</span>
+            Токен бота хранится в настройках сервера и не вводится через браузер — так он не
+            попадёт ни в историю запросов, ни в расширения. Обратитесь в поддержку Coolay, чтобы
+            подключить бота вашей компании.
+          </template>
         </p>
       </div>
     </div>
