@@ -452,7 +452,7 @@ const server = http.createServer(async (req, res) => {
 
   // Telegram-бот и Mini App (авторизация своя — по Telegram ID)
   if (path.startsWith('/api/telegram/')) {
-    const handled = await telegramRouter(req, res, { url, sendJson, readBody })
+    const handled = await telegramRouter(req, res, { url, sendJson, readBody, auth })
     if (handled) return
     return sendJson(res, 404, { ok: false, error: 'Not found' })
   }

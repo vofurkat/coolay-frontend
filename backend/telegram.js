@@ -19,7 +19,8 @@
  * Эндпоинты:
  *   POST /api/telegram/webhook        — приём обновлений от Telegram
  *   POST /api/telegram/setup          — установка webhook и кнопки меню
- *   GET  /api/telegram/status         — состояние подключения
+ *   GET  /api/telegram/status         — состояние подключения (супер-админ)
+ *   GET  /api/telegram/bot-info       — состояние бота для клиента и его сотрудники
  *   POST /api/telegram/miniapp/auth   — вход в мини-приложение по initData
  *   POST /api/telegram/miniapp/sku    — создание SKU из мини-приложения
  */
@@ -393,7 +394,12 @@ async function handleUpdate(db, update) {
 
 /* ─────────────────── Роутер ─────────────────── */
 
-export async function telegramRouter(req, res, { url, sendJson, readBody }) {
+/**
+ * auth здесь опционален: у webhook и Mini App своя авторизация (секрет
+ * заголовка и HMAC initData), а cookie-сессии у них нет вовсе. Он нужен только
+ * эндпоинту /bot-info, который отвечает владельцу компании на сайте.
+ */
+export async function telegramRouter(req, res, { url, sendJson, readBody, auth = null }) {
   const p = url.pathname
   const db = load()
 
@@ -486,6 +492,61 @@ export async function telegramRouter(req, res, { url, sendJson, readBody }) {
     } catch (e) {
       sendJson(res, 500, { ok: false, error: e.message })
     }
+    return true
+  }
+
+  /*
+   * Состояние бота для КЛИЕНТА (владельца компании), а не для платформы.
+   *
+   * Отдельный эндпоинт нужен потому, что /api/telegram/status закрыт под
+   * супер-админа: он показывает webhook и считает сотрудников по всем клиентам
+   * сразу. Владельцу же нужно видеть только своё — подключён ли бот и кто из
+   * ЕГО сотрудников до бота дошёл.
+   *
+   * Токен здесь не отдаётся ни в каком виде, даже замаскированным: это
+   * серверный секрет, и в браузере ему делать нечего.
+   */
+  if (p === '/api/telegram/bot-info' && req.method === 'GET') {
+    if (!auth) {
+      sendJson(res, 401, { ok: false, error: 'Требуется вход' })
+      return true
+    }
+    const mine = db.employees.filter((e) => e.clientId === auth.client.id)
+    const base = publicBase()
+    let bot = null
+    if (token()) {
+      // getMe кэшировать не нужно: запрос дешёвый, а показывать устаревшее
+      // имя бота хуже, чем секунду подождать.
+      try {
+        const me = await tg('getMe', {})
+        bot = { id: me.id, username: me.username, name: me.first_name }
+      } catch {
+        // Токен задан, но Telegram его не принял — так и скажем, вместо того
+        // чтобы молча показать «не подключён» и отправить искать причину.
+        bot = null
+      }
+    }
+    sendJson(res, 200, {
+      ok: true,
+      configured: !!token(),
+      botAvailable: !!bot,
+      bot,
+      miniAppUrl: base ? `${base}/tg` : '',
+      botLink: bot?.username ? `https://t.me/${bot.username}` : '',
+      employees: mine.map((e) => ({
+        id: e.id,
+        fullName: e.fullName,
+        phone: e.phone,
+        status: e.status,
+        canGenerate: e.canGenerate !== false,
+        telegramId: e.telegramId || null,
+        telegramUsername: e.telegramUsername || '',
+        botVerifiedAt: e.botVerifiedAt || null,
+        lastActive: e.lastActive || null,
+      })),
+      linked: mine.filter((e) => e.telegramId).length,
+      total: mine.length,
+    })
     return true
   }
 

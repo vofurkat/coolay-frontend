@@ -263,18 +263,55 @@ export const teamApi = {
 
 export interface TelegramStatus {
   configured: boolean
-  bot: { id: number; username: string; firstName: string } | null
-  webhook: { url: string; pendingUpdateCount: number; lastErrorMessage?: string } | null
+  bot: { id: number; username: string; name: string } | null
+  webhook: { url: string; pending: number; lastError: string } | null
   miniAppUrl: string
-  employeesLinked: number
+  verified: number
+  total: number
+}
+
+/** Сотрудник в разрезе подключения к боту — подмножество Employee. */
+export interface BotEmployeeInfo {
+  id: string
+  fullName: string
+  phone: string
+  status: EmployeeStatus
+  canGenerate: boolean
+  telegramId: number | null
+  telegramUsername: string
+  botVerifiedAt: string | null
+  lastActive: string | null
+}
+
+/**
+ * Состояние бота для владельца компании.
+ * Токена здесь нет намеренно — это серверный секрет, в браузер он не попадает.
+ */
+export interface BotInfo {
+  configured: boolean
+  botAvailable: boolean
+  bot: { id: number; username: string; name: string } | null
+  miniAppUrl: string
+  botLink: string
+  employees: BotEmployeeInfo[]
+  linked: number
+  total: number
 }
 
 export const telegramApi = {
+  /** Состояние бота и сотрудники своей компании. Токен не отдаётся. */
+  botInfo() {
+    return get<{ ok: true } & BotInfo>('/api/telegram/bot-info')
+  },
+  /*
+   * status и setup — платформенные операции, закрыты сессией супер-админа.
+   * Из клиентского интерфейса они не вызываются; оставлены для админки.
+   */
   status() {
-    return get<{ ok: true; status: TelegramStatus }>('/api/telegram/status')
+    return get<{ ok: true } & TelegramStatus>('/api/telegram/status')
   },
   setup() {
-    return post<{ ok: true; status: TelegramStatus }>('/api/telegram/setup')
+    return post<{ ok: true; webhook: string }>('/api/telegram/setup')
   },
   /** Авторизация Mini App: initData проверяется на сервере по HMAC. */
   miniAppAuth(initData: string) {

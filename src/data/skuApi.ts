@@ -272,7 +272,16 @@ export interface SimilarOk {
   threshold: number
 }
 
-export function findSimilar(params: { analysis: SkuAnalysis; imageHash?: string }) {
+/**
+ * Поиск похожих товаров.
+ *
+ * analysis необязателен: мастер карточек передаёт и разбор, и хеш фото, а
+ * простые инструменты работают с одним изображением без AI-анализа. Сервер
+ * считает оба признака независимо и берёт максимум, поэтому запрос с одним
+ * хешем корректен — просто ловит только пересохранённое фото, а не тот же
+ * товар, переснятый другим кадром.
+ */
+export function findSimilar(params: { analysis?: SkuAnalysis; imageHash?: string }) {
   return post<SimilarOk>('/api/sku/similar', params)
 }
 

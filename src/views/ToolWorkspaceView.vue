@@ -5,8 +5,10 @@ import Icon from '@/components/ui/Icon.vue'
 import SelectField from '@/components/ui/SelectField.vue'
 import PickerModal from '@/components/tool/PickerModal.vue'
 import { tools } from '@/data/tools'
-import { models, poses, recentGenerations } from '@/data/mock'
+import { models, poses } from '@/data/mock'
 import { isDuplicate } from '@/data/similarity'
+import { findSimilar, imageHash } from '@/data/skuApi'
+import { isFail } from '@/data/platformApi'
 import Avatar from '@/components/ui/Avatar.vue'
 import type { SimilarMatch } from '@/types'
 import { generateSmart, mapResolution, mapAspect } from '@/data/generateApi'
@@ -53,31 +55,49 @@ const scanning = ref(false)
 const scanResult = ref<{ similarity: number; matches: SimilarMatch[] } | null>(null)
 const dismissedDup = ref(false)
 
-// Кандидаты из ранее загруженных товаров (демо)
-const duplicateCandidates: SimilarMatch[] = recentGenerations
-  .filter((g) => g.similarMatches?.length)
-  .flatMap((g) => g.similarMatches!)
+const scanError = ref('')
 
-function scanDuplicates() {
+/**
+ * Поиск похожего товара по загруженному фото.
+ *
+ * Раньше здесь была имитация: Math.random() решал, «нашёлся» ли дубликат, и
+ * подставлял случайную запись из демо-набора. Это хуже отсутствия функции —
+ * можно было отменить генерацию из-за выдуманного совпадения или, наоборот,
+ * получить «чисто» при реальном дубле.
+ *
+ * Теперь сравнение настоящее: dHash считается в браузере (у бэкенда без
+ * зависимостей нет декодера JPEG), а сервер сопоставляет его с хешами
+ * карточек компании по расстоянию Хэмминга.
+ *
+ * Анализ товара здесь не передаётся: этот инструмент работает с одним фото
+ * без AI-разбора, поэтому сравнение идёт только по изображению. Тот же товар,
+ * переснятый другим кадром, так не находится — для этого есть мастер карточек.
+ */
+async function scanDuplicates() {
+  if (!uploadedImage.value) return
   scanResult.value = null
+  scanError.value = ''
   dismissedDup.value = false
   scanning.value = true
-  // Имитация поиска по базе товаров
-  setTimeout(() => {
-    scanning.value = false
-    // Демо: случайно выбираем — нашли похожий товар или нет
-    const found = Math.random() > 0.45
-    if (found) {
-      const top = duplicateCandidates[Math.floor(Math.random() * duplicateCandidates.length)]
-      const sim = top?.similarity ?? 88
-      scanResult.value = {
-        similarity: sim,
-        matches: duplicateCandidates.slice(0, 2),
-      }
-    } else {
-      scanResult.value = { similarity: Math.floor(Math.random() * 20), matches: [] }
+  try {
+    const hash = await imageHash(uploadedImage.value)
+    if (!hash) {
+      scanError.value = 'Не удалось обработать изображение — попробуйте другой файл'
+      return
     }
-  }, 1400)
+    // Клиент API не бросает исключения, а возвращает Fail — проверяем isFail.
+    const r = await findSimilar({ imageHash: hash })
+    if (isFail(r)) {
+      scanError.value = r.error || 'Не удалось проверить по базе товаров'
+      return
+    }
+    scanResult.value = {
+      similarity: r.matches[0]?.similarity ?? 0,
+      matches: r.matches,
+    }
+  } finally {
+    scanning.value = false
+  }
 }
 
 function fmtShort(iso: string) {
@@ -326,6 +346,15 @@ watch(
                   <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
                 </svg>
                 <span class="text-sm font-medium text-ink-600">Проверяем, не загружали ли товар ранее…</span>
+              </div>
+
+              <!-- Ошибка проверки: показываем явно, иначе пользователь решит,
+                   что дублей нет, хотя проверка вообще не прошла. -->
+              <div
+                v-else-if="scanError"
+                class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-800"
+              >
+                {{ scanError }}
               </div>
 
               <!-- результат -->
